@@ -16,6 +16,8 @@ name.txt"
 printf 'daemon_newline_payload\n' > "$OddPath"
 printf 'exact fuzzy result\n' > "$TempDir/root/report.txt"
 printf 'typo fuzzy result\n' > "$TempDir/root/reprot.txt"
+printf 'large_fallback_token\n' > "$TempDir/root/large.txt"
+yes 'padding' | head -c 600000 >> "$TempDir/root/large.txt"
 ./cearch index --db "$TempDir/state/index.db" "$TempDir/root"
 "$Daemon" serve --db "$TempDir/state/index.db" --socket "$TempDir/run/cearch.sock" --root "$TempDir/root" &
 DaemonPid=$!
@@ -49,8 +51,10 @@ printf '%s\0' "$OddPath" > "$TempDir/expected-null"
 cmp "$TempDir/expected-null" "$TempDir/actual-null"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" content large_fallback_token > "$TempDir/large-content"
+grep -q '/large.txt$' "$TempDir/large-content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/stats"
-grep -q '^entries: 7$' "$TempDir/stats"
+grep -q '^entries: 8$' "$TempDir/stats"
 printf 'live_reconciliation_marker\n' > "$TempDir/root/new-arrival.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search new-arrival > "$TempDir/live-search" &&
@@ -62,7 +66,7 @@ done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content live_reconciliation_marker > "$TempDir/live-content"
 grep -q '/new-arrival.txt$' "$TempDir/live-content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/live-stats"
-grep -q '^entries: 8$' "$TempDir/live-stats"
+grep -q '^entries: 9$' "$TempDir/live-stats"
 rm "$TempDir/root/needle.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/removed-search" &&
@@ -72,7 +76,7 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$Tem
     sleep 0.1
 done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/removed-stats"
-grep -q '^entries: 7$' "$TempDir/removed-stats"
+grep -q '^entries: 8$' "$TempDir/removed-stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
 DaemonPid=
