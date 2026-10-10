@@ -4,6 +4,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,9 +18,13 @@ typedef struct {
     char *Path;
     uint64_t Size;
     int64_t Mtime;
+    uint32_t MtimeNsec;
+    int64_t Ctime;
+    uint32_t CtimeNsec;
     uint64_t Device;
     uint64_t Inode;
     char Type;
+    bool ContentIndexed;
 } CearchScanEntry;
 
 typedef struct {
@@ -56,10 +61,14 @@ static bool AddEntry(CearchScanTable *Table, const char *Path, const struct stat
     Table->Entries[Table->Count++] = (CearchScanEntry){
         .Path = Copy,
         .Size = Status->st_size < 0 ? 0U : (uint64_t)Status->st_size,
-        .Mtime = (int64_t)Status->st_mtime,
+        .Mtime = (int64_t)Status->st_mtim.tv_sec,
+        .MtimeNsec = (uint32_t)Status->st_mtim.tv_nsec,
+        .Ctime = (int64_t)Status->st_ctim.tv_sec,
+        .CtimeNsec = (uint32_t)Status->st_ctim.tv_nsec,
         .Device = (uint64_t)Status->st_dev,
         .Inode = (uint64_t)Status->st_ino,
-        .Type = S_ISDIR(Status->st_mode) ? 'd' : S_ISREG(Status->st_mode) ? 'f' : 'o'
+        .Type = S_ISDIR(Status->st_mode) ? 'd' : S_ISREG(Status->st_mode) ? 'f' : 'o',
+        .ContentIndexed = !S_ISREG(Status->st_mode)
     };
     return true;
 }
@@ -128,7 +137,110 @@ static bool WalkPath(CearchScanTable *Table, const char *Path) {
     return true;
 }
 
-static bool WriteSnapshot(const char *Database, const CearchScanTable *Table) {
+#define CearchContentIndexFileLimit (512U * 1024U)
+#define CearchContentIndexBudget (16U * 1024U * 1024U)
+
+static bool SameMetadata(const struct stat *Status, const CearchScanEntry *Entry) {
+    return S_ISREG(Status->st_mode) &&
+           (uint64_t)Status->st_size == Entry->Size &&
+           (int64_t)Status->st_mtim.tv_sec == Entry->Mtime &&
+           (uint32_t)Status->st_mtim.tv_nsec == Entry->MtimeNsec &&
+           (int64_t)Status->st_ctim.tv_sec == Entry->Ctime &&
+           (uint32_t)Status->st_ctim.tv_nsec == Entry->CtimeNsec &&
+           (uint64_t)Status->st_dev == Entry->Device &&
+           (uint64_t)Status->st_ino == Entry->Inode;
+}
+
+static bool ReadContentForIndex(const CearchScanEntry *Entry, char **Content,
+                                bool *Excluded) {
+    *Content = NULL;
+    *Excluded = false;
+    int Descriptor = open(Entry->Path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (Descriptor < 0) return false;
+    struct stat Status;
+    if (fstat(Descriptor, &Status) != 0 || !SameMetadata(&Status, Entry) ||
+        Entry->Size > CearchContentIndexFileLimit || Entry->Size > SIZE_MAX - 1U) {
+        (void)close(Descriptor);
+        return false;
+    }
+
+    size_t Expected = (size_t)Entry->Size;
+    char *Buffer = malloc(Expected + 1U);
+    if (!Buffer) {
+        (void)close(Descriptor);
+        return false;
+    }
+    size_t Used = 0U;
+    bool Success = true;
+    while (Used < Expected) {
+        ssize_t ReadCount = read(Descriptor, Buffer + Used, Expected - Used);
+        if (ReadCount < 0 && errno == EINTR) continue;
+        if (ReadCount <= 0) { Success = false; break; }
+        Used += (size_t)ReadCount;
+    }
+    unsigned char Extra = 0U;
+    if (Success) {
+        ssize_t ReadCount;
+        do ReadCount = read(Descriptor, &Extra, 1U);
+        while (ReadCount < 0 && errno == EINTR);
+        if (ReadCount != 0) Success = false;
+    }
+    int SavedErrno = errno;
+    if (close(Descriptor) != 0 && Success) {
+        Success = false;
+        SavedErrno = errno;
+    }
+    errno = SavedErrno;
+    if (!Success || Used != Expected) {
+        free(Buffer);
+        return false;
+    }
+    if (memchr(Buffer, '\0', Used)) {
+        free(Buffer);
+        *Excluded = true;
+        return true;
+    }
+    Buffer[Used] = '\0';
+    *Content = Buffer;
+    return true;
+}
+
+static bool BuildContentIndex(CearchScanTable *Table, CearchFileEntry *IndexEntries,
+                              char ***ContentBuffersOut, CearchIndex *ContentIndex) {
+    char **ContentBuffers = calloc(Table->Count ? Table->Count : 1U, sizeof(*ContentBuffers));
+    if (!ContentBuffers) return false;
+    size_t IndexedBytes = 0U;
+    for (size_t Index = 0U; Index < Table->Count; ++Index) {
+        CearchScanEntry *Entry = &Table->Entries[Index];
+        Entry->ContentIndexed = Entry->Type != 'f';
+        if (Entry->Type != 'f' || Entry->Size > CearchContentIndexFileLimit ||
+            Entry->Size > CearchContentIndexBudget - IndexedBytes) continue;
+        bool Excluded = false;
+        if (!ReadContentForIndex(Entry, &ContentBuffers[Index], &Excluded)) {
+            Entry->ContentIndexed = false;
+            continue;
+        }
+        Entry->ContentIndexed = true;
+        if (Excluded) continue;
+        IndexedBytes += (size_t)Entry->Size;
+    }
+
+    for (size_t Index = 0U; Index < Table->Count; ++Index) {
+        IndexEntries[Index].Path = ContentBuffers[Index] ? ContentBuffers[Index] : "";
+    }
+    *ContentIndex = (CearchIndex){ .Entries = IndexEntries, .Count = Table->Count };
+    if (!CearchBuildNameIndex(ContentIndex)) {
+        for (size_t Index = 0U; Index < Table->Count; ++Index)
+            IndexEntries[Index].Path = Table->Entries[Index].Path;
+        for (size_t Index = 0U; Index < Table->Count; ++Index) free(ContentBuffers[Index]);
+        free(ContentBuffers);
+        return false;
+    }
+    *ContentBuffersOut = ContentBuffers;
+    return true;
+}
+
+static bool WriteSnapshot(const char *Database, CearchScanTable *Table) {
     if (Table->Count > UINT32_MAX) {
         fprintf(stderr, "cearch: snapshot supports at most UINT32_MAX entries\n");
         return false;
@@ -164,17 +276,25 @@ static bool WriteSnapshot(const char *Database, const CearchScanTable *Table) {
             .PathLength = (uint32_t)Length,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
+            .MtimeNsec = Source->MtimeNsec,
+            .Ctime = Source->Ctime,
+            .CtimeNsec = Source->CtimeNsec,
             .Device = Source->Device,
             .Inode = Source->Inode,
-            .Type = Source->Type == 'f' ? 1U : Source->Type == 'd' ? 2U : 3U
+            .Type = Source->Type == 'f' ? 1U : Source->Type == 'd' ? 2U : 3U,
+            .Reserved = { Source->ContentIndexed ? 1U : 0U }
         };
         IndexEntries[Index] = (CearchFileEntry){
             .Path = Source->Path,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
+            .MtimeNsec = Source->MtimeNsec,
+            .Ctime = Source->Ctime,
+            .CtimeNsec = Source->CtimeNsec,
             .Device = Source->Device,
             .Inode = Source->Inode,
-            .Type = Source->Type
+            .Type = Source->Type,
+            .ContentIndexed = Source->ContentIndexed
         };
         memcpy(Strings + StringOffset, Source->Path, Length + 1U);
         StringOffset += Length + 1U;
@@ -194,12 +314,42 @@ static bool WriteSnapshot(const char *Database, const CearchScanTable *Table) {
         Success = CearchEncodeNameIndex(&NameIndex, &EncodedTrigrams, &PostingData,
                                         &PostingDataSize, &Skips, &SkipCount);
     }
+    CearchTrigramPosting *ContentTrigrams = nullptr;
+    unsigned char *ContentPostingData = nullptr;
+    size_t ContentPostingDataSize = 0U;
+    CearchPostingSkip *ContentSkips = nullptr;
+    size_t ContentSkipCount = 0U;
+    size_t ContentPostingCount = 0U;
+    char **ContentBuffers = nullptr;
+    CearchIndex ContentIndex = {0};
+    if (Success) Success = BuildContentIndex((CearchScanTable *)Table, IndexEntries,
+                                             &ContentBuffers, &ContentIndex);
+    if (Success) {
+        Success = CearchEncodeNameIndex(&ContentIndex, &ContentTrigrams, &ContentPostingData,
+                                        &ContentPostingDataSize, &ContentSkips, &ContentSkipCount);
+        ContentPostingCount = ContentIndex.TrigramPostingCount;
+    }
     if (Success) {
         Success = CearchStoreWrite(Database, Entries, Table->Count, Strings, StringsSize,
                                    EncodedTrigrams, NameIndex.TrigramCount,
                                    PostingData, PostingDataSize, Skips, SkipCount,
-                                   NameIndex.TrigramPostingCount);
+                                   NameIndex.TrigramPostingCount,
+                                   ContentTrigrams, ContentIndex.TrigramCount,
+                                   ContentPostingData, ContentPostingDataSize,
+                                   ContentSkips, ContentSkipCount, ContentPostingCount);
     }
+    if (ContentIndex.Entries) {
+        CearchFreeNameIndex(&ContentIndex);
+        for (size_t Index = 0U; Index < Table->Count; ++Index)
+            IndexEntries[Index].Path = Table->Entries[Index].Path;
+    }
+    if (ContentBuffers) {
+        for (size_t Index = 0U; Index < Table->Count; ++Index) free(ContentBuffers[Index]);
+        free(ContentBuffers);
+    }
+    free(ContentTrigrams);
+    free(ContentPostingData);
+    free(ContentSkips);
     free(EncodedTrigrams);
     free(PostingData);
     free(Skips);
