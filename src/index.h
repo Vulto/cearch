@@ -9,9 +9,13 @@ typedef struct {
     char *Path;
     uint64_t Size;
     int64_t Mtime;
+    uint32_t MtimeNsec;
+    int64_t Ctime;
+    uint32_t CtimeNsec;
     uint64_t Device;
     uint64_t Inode;
     char Type;
+    bool ContentIndexed;
 } CearchFileEntry;
 
 typedef struct {
