@@ -37,7 +37,7 @@ Use [docs/USAGE.md](docs/USAGE.md) for all options and [docs/ARCHITECTURE.md](do
 ## Design
 
 - C23-compatible, Linux/POSIX APIs, no mandatory third-party libraries.
-- Dense numeric file IDs and compact trigram posting lists for name-query candidate reduction.
+- Dense numeric file IDs, delta-coded trigram postings, and skip checkpoints stored in the mmap snapshot.
 - Atomic, versioned binary snapshots with bounded mmap validation.
 - The daemon keeps a warm index in memory and uses Unix-domain sockets.
 - Recursive inotify watches mark the index dirty; event overflow and periodic full reconciliation are handled by rescanning roots and atomically replacing the snapshot.
@@ -45,4 +45,4 @@ Use [docs/USAGE.md](docs/USAGE.md) for all options and [docs/ARCHITECTURE.md](do
 
 ## Current scope
 
-The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. A persistent on-disk trigram/content posting index, advanced query AST, fuzzy scoring, and parallel client handling remain future engineering work. Performance claims require reproducible benchmarks and are not inferred from CI alone.
+The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. Persistent trigram postings are stored in the snapshot; content search remains a scan of current regular-file contents. An advanced query AST, fuzzy scoring, parallel client handling, and reproducible performance benchmarks remain future engineering work.
