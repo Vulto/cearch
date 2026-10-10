@@ -28,6 +28,29 @@ int main(void) {
     assert(CearchNameCandidate(&Index, "be", 1U));
     assert(CearchNameCandidate(&Index, "", 3U));
 
+    CearchNameQuery Prepared = {0};
+    assert(CearchNameQueryPrepare("ALPHA", &Prepared));
+    CearchNameCandidateIterator Iterator = {0};
+    assert(CearchNameCandidatesBegin(&Index, &Prepared, &Iterator));
+    uint32_t FileId = UINT32_MAX;
+    assert(CearchNameCandidatesNext(&Iterator, &FileId) && FileId == 0U);
+    assert(!CearchNameCandidatesNext(&Iterator, &FileId));
+    CearchNameQueryFree(&Prepared);
+
+    assert(CearchNameQueryPrepare("missing", &Prepared));
+    assert(CearchNameCandidatesBegin(&Index, &Prepared, &Iterator));
+    assert(!CearchNameCandidatesNext(&Iterator, &FileId));
+    CearchNameQueryFree(&Prepared);
+
+    assert(CearchNameQueryPrepare("be", &Prepared));
+    assert(CearchNameCandidatesBegin(&Index, &Prepared, &Iterator));
+    for (uint32_t Expected = 0U; Expected < 4U; ++Expected) {
+        assert(CearchNameCandidatesNext(&Iterator, &FileId));
+        assert(FileId == Expected);
+    }
+    assert(!CearchNameCandidatesNext(&Iterator, &FileId));
+    CearchNameQueryFree(&Prepared);
+
     const CearchTrigramPosting *SavedTrigrams = Index.Trigrams;
     const uint32_t *SavedFileIds = Index.TrigramFileIds;
     size_t SavedTrigramCount = Index.TrigramCount;
@@ -37,10 +60,10 @@ int main(void) {
     assert(CearchAttachNameIndex(&MappedIndex, SavedTrigrams, SavedTrigramCount,
                                  SavedFileIds, SavedPostingCount));
     assert(!MappedIndex.OwnsNameIndex);
-    CearchNameQuery Prepared = {0};
     assert(CearchNameQueryPrepare("ALPHA", &Prepared));
-    assert(CearchNameCandidatePrepared(&MappedIndex, &Prepared, 0U));
-    assert(!CearchNameCandidatePrepared(&MappedIndex, &Prepared, 1U));
+    assert(CearchNameCandidatesBegin(&MappedIndex, &Prepared, &Iterator));
+    assert(CearchNameCandidatesNext(&Iterator, &FileId) && FileId == 0U);
+    assert(!CearchNameCandidatesNext(&Iterator, &FileId));
     CearchNameQueryFree(&Prepared);
 
     CearchFreeNameIndex(&MappedIndex);
