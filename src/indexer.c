@@ -87,7 +87,7 @@ static bool WalkPath(CearchScanTable *Table, const char *Path) {
     struct stat Status;
     if (lstat(Path, &Status) != 0) {
         fprintf(stderr, "cearch: cannot stat %s: %s\n", Path, strerror(errno));
-        return true;
+        return false;
     }
     if (!AddEntry(Table, Path, &Status)) {
         fprintf(stderr, "cearch: out of memory indexing %s\n", Path);
@@ -98,15 +98,17 @@ static bool WalkPath(CearchScanTable *Table, const char *Path) {
     DIR *Directory = opendir(Path);
     if (!Directory) {
         fprintf(stderr, "cearch: cannot read directory %s: %s\n", Path, strerror(errno));
-        return true;
+        return false;
     }
     for (;;) {
         errno = 0;
         struct dirent *Item = readdir(Directory);
         if (!Item) {
-            if (errno != 0)
+            bool ReadSuccess = errno == 0;
+            if (!ReadSuccess)
                 fprintf(stderr, "cearch: error reading directory %s: %s\n", Path, strerror(errno));
-            break;
+            closedir(Directory);
+            return ReadSuccess;
         }
         if (IsDotEntry(Item->d_name)) continue;
         char *Child = JoinPath(Path, Item->d_name);
