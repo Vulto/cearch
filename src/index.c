@@ -67,7 +67,7 @@ static bool BuildTrigramIndex(CearchIndex *Index) {
             return false;
         }
     }
-    qsort(Pairs, PairCount, sizeof(*Pairs), CompareTrigramPair);
+    if (PairCount > 1U) qsort(Pairs, PairCount, sizeof(*Pairs), CompareTrigramPair);
 
     size_t PostingCount = 0;
     for (size_t PairIndex = 0; PairIndex < PairCount; ++PairIndex) {
