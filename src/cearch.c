@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "index.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -389,17 +390,34 @@ static const char *BaseName(const char *Path) {
 static bool SearchCommand(const char *Database, const char *Query, bool MatchPath, size_t Limit) {
     FileTable Table = {0};
     if (!LoadDatabase(Database, &Table)) return false;
+
+    CearchIndex Index = {0};
+    Index.Entries = (CearchFileEntry *)Table.Entries;
+    Index.Count = Table.Count;
+    if (!CearchBuildNameIndex(&Index)) {
+        fprintf(stderr, "cearch: could not build trigram index\n");
+        FreeTable(&Table);
+        CearchFreeNameIndex(&Index);
+        return false;
+    }
+
     size_t Found = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
-        const FileEntry *Entry = &Table.Entries[Index];
+    size_t QueryLength = strlen(Query);
+    bool UseTrigrams = QueryLength >= 3U && !MatchPath;
+    for (size_t EntryIndex = 0; EntryIndex < Table.Count; ++EntryIndex) {
+        const FileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
+        if (UseTrigrams && !CearchNameCandidate(&Index, Query, (uint32_t)EntryIndex)) continue;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
         if (puts(Entry->Path) == EOF) {
+            CearchFreeNameIndex(&Index);
             FreeTable(&Table);
             return false;
         }
         if (++Found >= Limit) break;
     }
+
+    CearchFreeNameIndex(&Index);
     FreeTable(&Table);
     return true;
 }
