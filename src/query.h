@@ -65,6 +65,12 @@ const char *CearchQuerySimpleTerm(const CearchQuery *Query);
 bool CearchQueryMatches(const CearchQuery *Query, const char *Text);
 bool CearchQueryMatchesEntry(const CearchQuery *Query,
                              const CearchFileEntry *Entry, const char *Text);
+bool CearchQueryScoreEntry(const CearchQuery *Query, const CearchFileEntry *Entry,
+                           const char *Text, uint32_t *Score);
+bool CearchQueryHasFuzzy(const CearchQuery *Query);
+int CearchQueryHitCompare(const void *Left, const void *Right);
+void CearchQueryHitConsider(CearchQueryHit *Hits, size_t *Count, size_t Capacity,
+                            const char *Path, uint32_t Score);
 void CearchQueryFree(CearchQuery *Query);
 
 #endif
