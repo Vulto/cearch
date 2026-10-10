@@ -21,7 +21,7 @@ typedef struct {
     CearchQueryNode *Root;
 } CearchQuery;
 
-/* Grammar: terms, quoted phrases, NOT, AND, OR, and parentheses. */
+/* Grammar: terms, quoted phrases, NOT, AND, OR, and parentheses. Query must be zero-initialized or previously parsed. */
 bool CearchQueryParse(const char *Text, CearchQuery *Query);
 const char *CearchQuerySimpleTerm(const CearchQuery *Query);
 bool CearchQueryMatches(const CearchQuery *Query, const char *Text);
