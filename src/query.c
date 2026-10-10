@@ -25,6 +25,7 @@ typedef struct {
     CearchTokenType Type;
     char *Text;
     size_t TokenCount;
+    CearchQueryMatchMode Mode;
 } CearchParser;
 
 static void FreeNode(CearchQueryNode *Node) {
@@ -44,7 +45,8 @@ void CearchQueryFree(CearchQuery *Query) {
 static CearchQueryNode *NewNode(CearchQueryNodeType Type,
                                 CearchQueryNode *Left,
                                 CearchQueryNode *Right,
-                                char *Term) {
+                                char *Term,
+                                CearchQueryMatchMode Mode) {
     CearchQueryNode *Node = calloc(1U, sizeof(*Node));
     if (!Node) {
         FreeNode(Left);
@@ -56,6 +58,7 @@ static CearchQueryNode *NewNode(CearchQueryNodeType Type,
     Node->Left = Left;
     Node->Right = Right;
     Node->Term = Term;
+    Node->Mode = Mode;
     return Node;
 }
 
@@ -66,6 +69,7 @@ static bool IsKeyword(const char *Text, const char *Keyword) {
 static void NextToken(CearchParser *Parser) {
     free(Parser->Text);
     Parser->Text = NULL;
+    Parser->Mode = CearchQuerySubstring;
     while (*Parser->Cursor && isspace((unsigned char)*Parser->Cursor)) ++Parser->Cursor;
     if (!*Parser->Cursor) {
         Parser->Type = TokenEnd;
@@ -86,6 +90,21 @@ static void NextToken(CearchParser *Parser) {
         return;
     }
 
+    if (strncasecmp(Parser->Cursor, "exact:", 6U) == 0) {
+        Parser->Mode = CearchQueryExact;
+        Parser->Cursor += 6U;
+    } else if (strncasecmp(Parser->Cursor, "prefix:", 7U) == 0) {
+        Parser->Mode = CearchQueryPrefix;
+        Parser->Cursor += 7U;
+    } else if (strncasecmp(Parser->Cursor, "suffix:", 7U) == 0) {
+        Parser->Mode = CearchQuerySuffix;
+        Parser->Cursor += 7U;
+    }
+    if (!*Parser->Cursor || isspace((unsigned char)*Parser->Cursor) ||
+        *Parser->Cursor == '(' || *Parser->Cursor == ')') {
+        Parser->Type = TokenInvalid;
+        return;
+    }
     bool Quoted = *Parser->Cursor == '"';
     const char *Start = Parser->Cursor + (Quoted ? 1 : 0);
     size_t Capacity = strlen(Start) + 1U;
@@ -120,9 +139,9 @@ static void NextToken(CearchParser *Parser) {
     }
     Text[Length] = '\0';
     Parser->Text = Text;
-    if (IsKeyword(Text, "AND")) Parser->Type = TokenAnd;
-    else if (IsKeyword(Text, "OR")) Parser->Type = TokenOr;
-    else if (IsKeyword(Text, "NOT")) Parser->Type = TokenNot;
+    if (Parser->Mode == CearchQuerySubstring && IsKeyword(Text, "AND")) Parser->Type = TokenAnd;
+    else if (Parser->Mode == CearchQuerySubstring && IsKeyword(Text, "OR")) Parser->Type = TokenOr;
+    else if (Parser->Mode == CearchQuerySubstring && IsKeyword(Text, "NOT")) Parser->Type = TokenNot;
     else Parser->Type = TokenTerm;
 }
 
@@ -133,7 +152,7 @@ static CearchQueryNode *ParsePrimary(CearchParser *Parser) {
         char *Term = Parser->Text;
         Parser->Text = NULL;
         NextToken(Parser);
-        return NewNode(CearchQueryTerm, NULL, NULL, Term);
+        return NewNode(CearchQueryTerm, NULL, NULL, Term, Parser->Mode);
     }
     if (Parser->Type == TokenLeftParen) {
         NextToken(Parser);
@@ -155,7 +174,7 @@ static CearchQueryNode *ParseUnary(CearchParser *Parser) {
     NextToken(Parser);
     CearchQueryNode *Child = ParseUnary(Parser);
     if (!Child) return NULL;
-    return NewNode(CearchQueryNot, Child, NULL, NULL);
+    return NewNode(CearchQueryNot, Child, NULL, NULL, CearchQuerySubstring);
 }
 
 static CearchQueryNode *ParseAnd(CearchParser *Parser) {
@@ -168,7 +187,7 @@ static CearchQueryNode *ParseAnd(CearchParser *Parser) {
             FreeNode(Left);
             return NULL;
         }
-        Left = NewNode(CearchQueryAnd, Left, Right, NULL);
+        Left = NewNode(CearchQueryAnd, Left, Right, NULL, CearchQuerySubstring);
         if (!Left) return NULL;
     }
     return Left;
@@ -184,7 +203,7 @@ static CearchQueryNode *ParseOr(CearchParser *Parser) {
             FreeNode(Left);
             return NULL;
         }
-        Left = NewNode(CearchQueryOr, Left, Right, NULL);
+        Left = NewNode(CearchQueryOr, Left, Right, NULL, CearchQuerySubstring);
         if (!Left) return NULL;
     }
     return Left;
@@ -228,10 +247,28 @@ static bool ContainsCaseInsensitive(const char *Haystack, const char *Needle) {
     return false;
 }
 
+static bool MatchTerm(const CearchQueryNode *Node, const char *Text) {
+    size_t TextLength = strlen(Text);
+    size_t TermLength = strlen(Node->Term);
+    switch (Node->Mode) {
+        case CearchQuerySubstring:
+            return ContainsCaseInsensitive(Text, Node->Term);
+        case CearchQueryExact:
+            return strcasecmp(Text, Node->Term) == 0;
+        case CearchQueryPrefix:
+            return TextLength >= TermLength &&
+                   strncasecmp(Text, Node->Term, TermLength) == 0;
+        case CearchQuerySuffix:
+            return TextLength >= TermLength &&
+                   strncasecmp(Text + TextLength - TermLength, Node->Term, TermLength) == 0;
+    }
+    return false;
+}
+
 static bool MatchNode(const CearchQueryNode *Node, const char *Text) {
     switch (Node->Type) {
         case CearchQueryTerm:
-            return ContainsCaseInsensitive(Text, Node->Term);
+            return MatchTerm(Node, Text);
         case CearchQueryNot:
             return !MatchNode(Node->Left, Text);
         case CearchQueryAnd:
