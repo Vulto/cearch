@@ -144,7 +144,9 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     Index.Entries = Table.Entries;
     Index.Count = Table.Count;
     if (!CearchAttachNameIndex(&Index, Store.Trigrams, Store.TrigramCount,
-                               Store.TrigramFileIds, Store.TrigramPostingCount)) {
+                               nullptr, Store.TrigramPostingCount,
+                               Store.TrigramData, Store.TrigramDataSize,
+                               Store.TrigramSkips, Store.TrigramSkipCount)) {
         fprintf(stderr, "cearch: invalid persisted trigram index\n");
         FreeTable(&Table);
         CearchStoreClose(&Store);
