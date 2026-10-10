@@ -17,7 +17,7 @@
 ## Remaining target work
 
 - Persistent content candidate index with current-content verification and update/recovery semantics.
-- Fuzzy ranking. Regex, compound boolean queries, and metadata filters currently scan paths; acceleration and broader query-language tests remain needed.
+- Regex and fuzzy matching/scoring are implemented. Fuzzy queries scan all indexed names and retain only the best limited result set; compound boolean queries and metadata filters also scan paths.
 - Bounded parallel client processing, timeouts/cancellation, and load testing.
 - Append-only update journal and snapshot compaction; establish whether benchmarks justify this complexity.
 - Repeatable benchmark datasets and reports, protocol fuzzing, filesystem race tests, and broader failure-injection coverage.
