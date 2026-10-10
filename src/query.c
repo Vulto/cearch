@@ -206,7 +206,7 @@ static bool ParseValueAndUnit(const char *Text, bool Duration,
 }
 
 static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
-    if (Mode != CearchQuerySubstring) return BuildTermNode(Term, Mode);
+    if (Mode != CearchQuerySubstring) return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
     CearchQueryNodeType Type = CearchQueryTerm;
     if (strncasecmp(Term, "ext:", 4U) == 0) {
         Type = CearchQueryFilterExtension;
@@ -402,6 +402,7 @@ static bool MatchFilter(const CearchQueryNode *Node, const CearchFileEntry *Entr
         case CearchQueryFilterIn: {
             size_t RootLength = strlen(Node->Term);
             while (RootLength > 1U && Node->Term[RootLength - 1U] == '/') --RootLength;
+            if (RootLength == 1U && Node->Term[0] == '/') return Entry->Path[0] == '/';
             if (strncmp(Entry->Path, Node->Term, RootLength) != 0) return false;
             return Entry->Path[RootLength] == '\0' || Entry->Path[RootLength] == '/';
         }
