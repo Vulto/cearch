@@ -28,9 +28,9 @@ Without explicit roots, the daemon is read-only and does not infer root ownershi
 
 ## Query semantics and planned grammar
 
-Name queries support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, boolean `NOT`/`AND`/`OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions and metadata filters currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans.
+Name queries support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, POSIX extended `regex:` terms, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, boolean `NOT`/`AND`/`OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions and metadata filters currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans.
 
-Regex and fuzzy ranking remain planned. The parser rejects malformed expressions and bounds query length/token count rather than silently reinterpreting invalid input.
+Fuzzy ranking remains planned. Regex terms are compiled once per query and malformed patterns are rejected. The parser rejects malformed expressions and bounds query length/token count rather than silently reinterpreting invalid input.
 
 ## Next architecture stages
 
