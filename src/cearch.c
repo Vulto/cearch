@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "index.h"
 #include "store.h"
+#include "indexer.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -65,158 +66,12 @@ static bool ReserveEntries(FileTable *Table, size_t Needed) {
     return true;
 }
 
-static bool AddEntry(FileTable *Table, const char *Path, const struct stat *Status) {
-    if (!ReserveEntries(Table, Table->Count + 1U)) return false;
-    char *Copy = strdup(Path);
-    if (!Copy) return false;
-    Table->Entries[Table->Count++] = (CearchFileEntry){
-        .Path = Copy,
-        .Size = Status->st_size < 0 ? 0U : (uint64_t)Status->st_size,
-        .Mtime = (int64_t)Status->st_mtime,
-        .Device = (uint64_t)Status->st_dev,
-        .Inode = (uint64_t)Status->st_ino,
-        .Type = S_ISDIR(Status->st_mode) ? 'd' : S_ISREG(Status->st_mode) ? 'f' : 'o'
-    };
-    return true;
-}
-
-static void FreeTable(FileTable *Table) {
-    for (size_t Index = 0; Index < Table->Count; ++Index) free(Table->Entries[Index].Path);
-    free(Table->Entries);
-    *Table = (FileTable){0};
-}
-
-static char *JoinPath(const char *Parent, const char *Name) {
-    size_t ParentLength = strlen(Parent);
-    size_t NameLength = strlen(Name);
-    bool HasSlash = ParentLength && Parent[ParentLength - 1U] == '/';
-    if (NameLength > SIZE_MAX - ParentLength - 2U) return nullptr;
-    size_t Length = ParentLength + NameLength + (HasSlash ? 1U : 2U);
-    char *Path = malloc(Length);
-    if (!Path) return nullptr;
-    memcpy(Path, Parent, ParentLength);
-    size_t Offset = ParentLength;
-    if (!HasSlash) Path[Offset++] = '/';
-    memcpy(Path + Offset, Name, NameLength + 1U);
-    return Path;
-}
-
-static bool IsDotEntry(const char *Name) {
-    return strcmp(Name, ".") == 0 || strcmp(Name, "..") == 0;
-}
-
-static bool WalkPath(FileTable *Table, const char *Path) {
-    struct stat Status;
-    if (lstat(Path, &Status) != 0) {
-        fprintf(stderr, "cearch: cannot stat %s: %s\n", Path, strerror(errno));
-        return true;
-    }
-    if (!AddEntry(Table, Path, &Status)) {
-        fprintf(stderr, "cearch: out of memory indexing %s\n", Path);
-        return false;
-    }
-    if (!S_ISDIR(Status.st_mode)) return true;
-
-    DIR *Directory = opendir(Path);
-    if (!Directory) {
-        fprintf(stderr, "cearch: cannot read directory %s: %s\n", Path, strerror(errno));
-        return true;
-    }
-    int DirectoryFd = dirfd(Directory);
-    struct dirent *Item;
-    for (;;) {
-        errno = 0;
-        Item = readdir(Directory);
-        if (!Item) {
-            if (errno != 0)
-                fprintf(stderr, "cearch: error reading directory %s: %s\n", Path, strerror(errno));
-            break;
-        }
-        if (IsDotEntry(Item->d_name)) continue;
-        char *Child = JoinPath(Path, Item->d_name);
-        if (!Child) {
-            closedir(Directory);
-            fprintf(stderr, "cearch: out of memory building path\n");
-            return false;
-        }
-        bool Success = WalkPath(Table, Child);
-        free(Child);
-        if (!Success) {
-            closedir(Directory);
-            return false;
-        }
-    }
-    (void)DirectoryFd;
-    closedir(Directory);
-    return true;
-}
-
 static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     if (RootCount <= 0) {
         fprintf(stderr, "cearch: index requires at least one ROOT\n");
         return false;
     }
-    FileTable Table = {0};
-    for (int Index = 0; Index < RootCount; ++Index) {
-        if (!WalkPath(&Table, Roots[Index])) {
-            FreeTable(&Table);
-            return false;
-        }
-    }
-
-    if (Table.Count > UINT32_MAX) {
-        fprintf(stderr, "cearch: this snapshot format supports at most UINT32_MAX entries\n");
-        FreeTable(&Table);
-        return false;
-    }
-
-    size_t StringsSize = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
-        size_t Length = strlen(Table.Entries[Index].Path);
-        if (Length > UINT32_MAX || StringsSize > UINT32_MAX - Length - 1U) {
-            fprintf(stderr, "cearch: path string table exceeds 4 GiB\n");
-            FreeTable(&Table);
-            return false;
-        }
-        StringsSize += Length + 1U;
-    }
-    char *Strings = malloc(StringsSize ? StringsSize : 1U);
-    CearchDiskEntry *Entries = calloc(Table.Count ? Table.Count : 1U, sizeof(*Entries));
-    if (!Strings || !Entries) {
-        fprintf(stderr, "cearch: out of memory creating snapshot\n");
-        free(Strings);
-        free(Entries);
-        FreeTable(&Table);
-        return false;
-    }
-
-    size_t StringOffset = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
-        CearchFileEntry *Source = &Table.Entries[Index];
-        size_t Length = strlen(Source->Path);
-        Entries[Index] = (CearchDiskEntry){
-            .PathOffset = (uint32_t)StringOffset,
-            .PathLength = (uint32_t)Length,
-            .Size = Source->Size,
-            .Mtime = Source->Mtime,
-            .Device = Source->Device,
-            .Inode = Source->Inode,
-            .Type = Source->Type == 'f' ? 1U : Source->Type == 'd' ? 2U : 3U
-        };
-        memcpy(Strings + StringOffset, Source->Path, Length + 1U);
-        StringOffset += Length + 1U;
-    }
-
-    bool Success = CearchStoreWrite(Database, Entries, Table.Count, Strings, StringsSize);
-    if (!Success)
-        fprintf(stderr, "cearch: failed writing snapshot %s: %s\n", Database, strerror(errno));
-    else
-        fprintf(stderr, "cearch: indexed %zu entries into %s\n", Table.Count, Database);
-
-    free(Strings);
-    free(Entries);
-    FreeTable(&Table);
-    return Success;
+    return CearchBuildSnapshot(Database, (const char *const *)Roots, (size_t)RootCount, nullptr);
 }
 
 static bool LoadDatabase(const char *Database, FileTable *Table) {
