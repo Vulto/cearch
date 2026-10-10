@@ -134,7 +134,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     CearchIndex Index = {0};
     Index.Entries = Table.Entries;
     Index.Count = Table.Count;
-    if (!CearchBuildNameIndex(&Index)) {
+    if (Table.Count > UINT32_MAX || !CearchBuildNameIndex(&Index)) {
         fprintf(stderr, "cearch: could not build trigram index\n");
         FreeTable(&Table);
         CearchFreeNameIndex(&Index);
@@ -144,12 +144,21 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     size_t Found = 0;
     size_t QueryLength = strlen(Query);
     bool UseTrigrams = QueryLength >= 3U && !MatchPath;
+    CearchNameQuery Prepared = {0};
+    if (UseTrigrams && !CearchNameQueryPrepare(Query, &Prepared)) {
+        CearchFreeNameIndex(&Index);
+        FreeTable(&Table);
+        return false;
+    }
+
     for (size_t EntryIndex = 0; EntryIndex < Table.Count; ++EntryIndex) {
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
-        if (UseTrigrams && !CearchNameCandidate(&Index, Query, (uint32_t)EntryIndex)) continue;
+        if (UseTrigrams &&
+            !CearchNameCandidatePrepared(&Index, &Prepared, (uint32_t)EntryIndex)) continue;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
         if (puts(Entry->Path) == EOF) {
+            CearchNameQueryFree(&Prepared);
             CearchFreeNameIndex(&Index);
             FreeTable(&Table);
             return false;
@@ -157,6 +166,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
         if (++Found >= Limit) break;
     }
 
+    CearchNameQueryFree(&Prepared);
     CearchFreeNameIndex(&Index);
     FreeTable(&Table);
     return true;
