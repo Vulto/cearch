@@ -29,6 +29,9 @@ jobs:
       - name: GCC static analysis
         if: matrix.compiler == 'gcc'
         run: make analyze CC=gcc CFLAGS="-O0 -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -D_FILE_OFFSET_BITS=64"
+      - name: Benchmark harness smoke test
+        if: matrix.compiler == 'gcc'
+        run: CEARCH_BENCH_FILES=100 make bench
 
   sanitizer:
     name: AddressSanitizer and UndefinedBehaviorSanitizer
