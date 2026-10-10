@@ -150,9 +150,10 @@ static CearchQueryNode *ParseOr(CearchParser *Parser);
 static CearchQueryNode *ParsePrimary(CearchParser *Parser) {
     if (Parser->Type == TokenTerm) {
         char *Term = Parser->Text;
+        CearchQueryMatchMode Mode = Parser->Mode;
         Parser->Text = NULL;
         NextToken(Parser);
-        return NewNode(CearchQueryTerm, NULL, NULL, Term, Parser->Mode);
+        return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
     }
     if (Parser->Type == TokenLeftParen) {
         NextToken(Parser);
