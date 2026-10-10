@@ -27,16 +27,6 @@ typedef struct {
 } CearchNameQuery;
 
 typedef struct {
-    const CearchIndex *Index;
-    const CearchNameQuery *Query;
-    uint64_t Position;
-    uint64_t End;
-    uint32_t AllCursor;
-    bool AllFiles;
-    bool Empty;
-} CearchNameCandidateIterator;
-
-typedef struct {
     CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
@@ -46,6 +36,16 @@ typedef struct {
     size_t TrigramPostingCount;
     bool OwnsNameIndex;
 } CearchIndex;
+
+typedef struct {
+    const CearchIndex *Index;
+    const CearchNameQuery *Query;
+    uint64_t Position;
+    uint64_t End;
+    uint32_t AllCursor;
+    bool AllFiles;
+    bool Empty;
+} CearchNameCandidateIterator;
 
 bool CearchBuildNameIndex(CearchIndex *Index);
 /* Attaches arrays already validated by CearchStoreOpen or produced by CearchBuildNameIndex. */
