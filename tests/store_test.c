@@ -24,6 +24,13 @@ typedef struct {
     uint64_t SkipOffset;
     uint64_t SkipCount;
     uint64_t FileIdCount;
+    uint64_t ContentTrigramOffset;
+    uint64_t ContentTrigramCount;
+    uint64_t ContentPostingDataOffset;
+    uint64_t ContentPostingDataSize;
+    uint64_t ContentSkipOffset;
+    uint64_t ContentSkipCount;
+    uint64_t ContentFileIdCount;
     uint64_t FileSize;
 } TestDiskHeader;
 
@@ -46,7 +53,8 @@ static void WriteValidSnapshot(const char *Database,
                                size_t PostingCount) {
     assert(CearchStoreWrite(Database, Entry, 1U, Path, strlen(Path) + 1U,
                             Trigrams, TrigramCount, PostingData, PostingDataSize,
-                            Skips, SkipCount, PostingCount));
+                            Skips, SkipCount, PostingCount,
+                            NULL, 0U, NULL, 0U, NULL, 0U, 0U));
 }
 
 int main(void) {
