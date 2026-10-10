@@ -23,6 +23,7 @@ typedef enum {
     CearchQueryFilterPath,
     CearchQueryFilterIn,
     CearchQueryRegex,
+    CearchQueryFuzzy,
     CearchQueryNot,
     CearchQueryAnd,
     CearchQueryOr
@@ -58,6 +59,9 @@ const char *CearchQuerySimpleTerm(const CearchQuery *Query);
 bool CearchQueryMatches(const CearchQuery *Query, const char *Text);
 bool CearchQueryMatchesEntry(const CearchQuery *Query,
                              const CearchFileEntry *Entry, const char *Text);
+bool CearchQueryScoreEntry(const CearchQuery *Query, const CearchFileEntry *Entry,
+                           const char *Text, uint32_t *Score);
+bool CearchQueryHasFuzzy(const CearchQuery *Query);
 void CearchQueryFree(CearchQuery *Query);
 
 #endif
