@@ -217,6 +217,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         const char *Base = strrchr(Entry->Path, '/');
         Base = Base ? Base + 1 : Entry->Path;
         const char *Haystack = MatchPath ? Entry->Path : Base;
+        fprintf(stderr, "DBG path='%s' base='%s' query='%s' found=%d\\n", Entry->Path, Base, Query, ContainsCaseInsensitive(Haystack, Query));
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
@@ -317,10 +318,8 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
     uint32_t Limit = Request.Limit ? Request.Limit : CearchDefaultLimit;
     switch (Request.Command) {
         case CearchCommandSearch:
-            fprintf(stderr, "cearchd-debug: dispatch search query='%s' len=%u limit=%u flags=%u\\n", Query, Request.QueryLength, Limit, Request.Flags);
             Success = SearchName(Daemon, Query, Limit, (Request.Flags & 1U) != 0U,
                                  &Output, &OutputLength, &Found);
-            fprintf(stderr, "cearchd-debug: result success=%d found=%u len=%zu\\n", Success, Found, OutputLength);
             break;
         case CearchCommandContent:
             Success = SearchContent(Daemon, Query, Limit, &Output, &OutputLength, &Found);
