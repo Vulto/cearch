@@ -51,6 +51,10 @@ int main(void) {
     assert(Matches("regex:^alpha.*[.]txt$", "alpha-report.txt"));
     assert(!Matches("regex:^alpha.*[.]txt$", "xalpha-report.txt"));
     assert(Matches("regex:\"two words\"", "TWO WORDS-file.txt"));
+    assert(Matches("fuzzy:report", "report.txt"));
+    assert(Matches("fuzzy:report", "reprot.txt"));
+    assert(!Matches("fuzzy:report", "banana.txt"));
+    assert(!Matches("fuzzy:ab", "ac"));
     assert(!Matches("suffix:.txt", "alpha.md"));
     assert(Matches("prefix:\"two words\"", "two words-file.txt"));
     assert(!Matches("prefix:\"two words\"", "prefix-two words-file.txt"));
@@ -69,6 +73,9 @@ int main(void) {
     Rejects("in:");
     Rejects("regex:");
     Rejects("regex:[");
+    Rejects("fuzzy:");
+    Rejects("fuzzy:two words");
+    Rejects("fuzzy:report!");
 
     CearchFileEntry Entry = {
         .Path = "/home/me/Documents/example.txt",
@@ -93,6 +100,7 @@ int main(void) {
     assert(MatchesEntry("in:/home/me", &Entry, "example.txt"));
     assert(!MatchesEntry("in:/home/m", &Entry, "example.txt"));
     assert(MatchesEntry("ext:txt AND size:>10mb", &Entry, "example.txt"));
+    assert(MatchesEntry("fuzzy:example AND ext:txt", &Entry, "example.txt"));
     Entry.Type = 'd';
     assert(MatchesEntry("type:dir", &Entry, "example.txt"));
     assert(MatchesEntry("in:/", &Entry, "example.txt"));

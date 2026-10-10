@@ -14,6 +14,8 @@ printf 'other contents\n' > "$TempDir/root/sub/readme.txt"
 OddPath="$TempDir/root/odd
 name.txt"
 printf 'daemon_newline_payload\n' > "$OddPath"
+printf 'exact fuzzy result\n' > "$TempDir/root/report.txt"
+printf 'typo fuzzy result\n' > "$TempDir/root/reprot.txt"
 ./cearch index --db "$TempDir/state/index.db" "$TempDir/root"
 "$Daemon" serve --db "$TempDir/state/index.db" --socket "$TempDir/run/cearch.sock" --root "$TempDir/root" &
 DaemonPid=$!
@@ -29,6 +31,13 @@ grep -q '/needle.txt$' "$TempDir/search"
 grep -q '/needle.txt$' "$TempDir/prefix"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search 'regex:^needle[.]txt$' > "$TempDir/regex"
 grep -q '/needle.txt$' "$TempDir/regex"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" search fuzzy:report > "$TempDir/fuzzy"
+test "$(wc -l < "$TempDir/fuzzy")" -eq 2
+test "$(sed -n '1p' "$TempDir/fuzzy")" = "$TempDir/root/report.txt"
+test "$(sed -n '2p' "$TempDir/fuzzy")" = "$TempDir/root/reprot.txt"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" --limit 1 search fuzzy:report > "$TempDir/fuzzy-limit"
+test "$(wc -l < "$TempDir/fuzzy-limit")" -eq 1
+test "$(cat "$TempDir/fuzzy-limit")" = "$TempDir/root/report.txt"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search ext:txt > "$TempDir/ext"
 grep -q '/needle.txt$' "$TempDir/ext"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search "in:$TempDir/root/sub" > "$TempDir/in-filter"
@@ -41,7 +50,7 @@ cmp "$TempDir/expected-null" "$TempDir/actual-null"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/stats"
-grep -q '^entries: 5$' "$TempDir/stats"
+grep -q '^entries: 7$' "$TempDir/stats"
 printf 'live_reconciliation_marker\n' > "$TempDir/root/new-arrival.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search new-arrival > "$TempDir/live-search" &&
@@ -53,7 +62,7 @@ done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content live_reconciliation_marker > "$TempDir/live-content"
 grep -q '/new-arrival.txt$' "$TempDir/live-content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/live-stats"
-grep -q '^entries: 6$' "$TempDir/live-stats"
+grep -q '^entries: 8$' "$TempDir/live-stats"
 rm "$TempDir/root/needle.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/removed-search" &&
@@ -63,7 +72,7 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$Tem
     sleep 0.1
 done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/removed-stats"
-grep -q '^entries: 5$' "$TempDir/removed-stats"
+grep -q '^entries: 7$' "$TempDir/removed-stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
 DaemonPid=
