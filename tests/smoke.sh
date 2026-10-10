@@ -1,10 +1,8 @@
 #!/bin/sh
 set -eu
-
 Program=${1:-./cearch}
 TempDir=$(mktemp -d)
 trap 'rm -rf "$TempDir"' EXIT HUP INT TERM
-
 mkdir -p "$TempDir/root/sub" "$TempDir/root/folder" "$TempDir/dbdir"
 printf 'hello from cearch\nsecond line\n' > "$TempDir/root/needle.txt"
 OddPath="$TempDir/root/odd
@@ -13,198 +11,28 @@ printf 'newline_payload\n' > "$OddPath"
 printf 'unique_content_token\n' > "$TempDir/root/sub/readme.md"
 printf 'nothing here\n' > "$TempDir/root/other.txt"
 printf 'alpha-alpha repeated\n' > "$TempDir/root/ALPHA.txt"
-
 "$Program" index --db "$TempDir/dbdir/index.db" "$TempDir/root"
 "$Program" stats --db "$TempDir/dbdir/index.db" > "$TempDir/stats"
-grep -q '^files: 5
+grep -q '^files: 5$' "$TempDir/stats"
 grep -q '^directories: 3$' "$TempDir/stats"
-
-"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
-grep -q '/needle.txt
-
-"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
-grep -q '/sub/readme.md$' "$TempDir/path"
-
-"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
-grep -q '/ALPHA.txt$' "$TempDir/case"
-
-"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
-test ! -s "$TempDir/repeated"
-
-"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
-grep -q '/sub/readme.md
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/stats"
-grep -q '^directories: 3$' "$TempDir/stats"
-
 "$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
 grep -q '/needle.txt$' "$TempDir/name"
-
-"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
-grep -q '/sub/readme.md$' "$TempDir/path"
-
-"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
-grep -q '/ALPHA.txt$' "$TempDir/case"
-
-"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
-test ! -s "$TempDir/repeated"
-
-"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
-grep -q '/sub/readme.md$' "$TempDir/content"
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/name"
 printf '%s\0' "$OddPath" > "$TempDir/expected-null"
 "$Program" search --db "$TempDir/dbdir/index.db" --null odd > "$TempDir/actual-null"
 cmp "$TempDir/expected-null" "$TempDir/actual-null"
-
 "$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
 grep -q '/sub/readme.md$' "$TempDir/path"
-
 "$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
 grep -q '/ALPHA.txt$' "$TempDir/case"
-
 "$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
 test ! -s "$TempDir/repeated"
-
 "$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
 grep -q '/sub/readme.md$' "$TempDir/content"
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/stats"
-grep -q '^directories: 3$' "$TempDir/stats"
-
-"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
-grep -q '/needle.txt$' "$TempDir/name"
-
-"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
-grep -q '/sub/readme.md$' "$TempDir/path"
-
-"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
-grep -q '/ALPHA.txt$' "$TempDir/case"
-
-"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
-test ! -s "$TempDir/repeated"
-
-"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
-grep -q '/sub/readme.md$' "$TempDir/content"
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/content"
 "$Program" content --db "$TempDir/dbdir/index.db" --null newline_payload > "$TempDir/content-null"
 cmp "$TempDir/expected-null" "$TempDir/content-null"
-
 "$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
 test ! -s "$TempDir/missing"
-
 printf 'fresh content token\n' >> "$TempDir/root/other.txt"
 "$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
 grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/stats"
-grep -q '^directories: 3$' "$TempDir/stats"
-
-"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
-grep -q '/needle.txt$' "$TempDir/name"
-
-"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
-grep -q '/sub/readme.md$' "$TempDir/path"
-
-"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
-grep -q '/ALPHA.txt$' "$TempDir/case"
-
-"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
-test ! -s "$TempDir/repeated"
-
-"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
-grep -q '/sub/readme.md$' "$TempDir/content"
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/name"
-printf '%s\0' "$OddPath" > "$TempDir/expected-null"
-"$Program" search --db "$TempDir/dbdir/index.db" --null odd > "$TempDir/actual-null"
-cmp "$TempDir/expected-null" "$TempDir/actual-null"
-
-"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
-grep -q '/sub/readme.md$' "$TempDir/path"
-
-"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
-grep -q '/ALPHA.txt$' "$TempDir/case"
-
-"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
-test ! -s "$TempDir/repeated"
-
-"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
-grep -q '/sub/readme.md$' "$TempDir/content"
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
-echo 'cearch smoke tests passed'
- "$TempDir/stats"
-grep -q '^directories: 3$' "$TempDir/stats"
-
-"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
-grep -q '/needle.txt$' "$TempDir/name"
-
-"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
-grep -q '/sub/readme.md$' "$TempDir/path"
-
-"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
-grep -q '/ALPHA.txt$' "$TempDir/case"
-
-"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
-test ! -s "$TempDir/repeated"
-
-"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
-grep -q '/sub/readme.md$' "$TempDir/content"
-
-"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
-test ! -s "$TempDir/missing"
-
-printf 'fresh content token\n' >> "$TempDir/root/other.txt"
-"$Program" content --db "$TempDir/dbdir/index.db" 'fresh content token' > "$TempDir/fresh"
-grep -q '/other.txt$' "$TempDir/fresh"
-
 echo 'cearch smoke tests passed'
