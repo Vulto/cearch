@@ -1,6 +1,6 @@
 CC ?= cc
 CFLAGS ?= -O2 -pipe
-CFLAGS += -std=c23 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -D_FILE_OFFSET_BITS=64
+CFLAGS += -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -D_FILE_OFFSET_BITS=64
 LDFLAGS ?=
 
 .PHONY: all clean test install
