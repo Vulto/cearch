@@ -217,7 +217,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         const char *Base = strrchr(Entry->Path, '/');
         Base = Base ? Base + 1 : Entry->Path;
         const char *Haystack = MatchPath ? Entry->Path : Base;
-        fprintf(stderr, "DBG path='%s' base='%s' query='%s' found=%d\\n", Entry->Path, Base, Query, ContainsCaseInsensitive(Haystack, Query));
+        fprintf(stderr, "DBG path='%s' base='%s' query='%s' hay='%s' len=%zu cmp=%d\\n", Entry->Path, Base, Query, Haystack, strlen(Query), strncasecmp(Haystack, Query, strlen(Query))); 
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
