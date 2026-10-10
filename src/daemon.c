@@ -547,16 +547,36 @@ static char *DefaultSocketPath(void) {
     return Path;
 }
 
-static int RunDaemon(const char *Database, const char *SocketPath) {
-    CearchDaemon Daemon = { .Listener = -1, .Store = { .Descriptor = -1 } };
+static int RunDaemon(const char *Database, const char *SocketPath,
+                     const char *const *Roots, size_t RootCount) {
+    CearchDaemon Daemon = { .Listener = -1, .Store = { .Descriptor = -1 }, .WatchFd = -1 };
     if (!BuildDaemonIndex(&Daemon, Database)) {
         fprintf(stderr, "cearchd: cannot load index: %s\n", strerror(errno));
         FreeDaemonIndex(&Daemon);
         return 1;
     }
+    if (!CopyRoots(&Daemon, Roots, RootCount)) {
+        fprintf(stderr, "cearchd: cannot allocate root list\n");
+        FreeDaemonIndex(&Daemon);
+        return 1;
+    }
+    if (Daemon.RootCount) {
+        Daemon.WatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+        if (Daemon.WatchFd < 0 || !ResetWatches(&Daemon)) {
+            fprintf(stderr, "cearchd: unable to initialize filesystem watches: %s\n", strerror(errno));
+            if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
+            Daemon.WatchFd = -1;
+            FreeRoots(&Daemon);
+            FreeDaemonIndex(&Daemon);
+            return 1;
+        }
+    }
+
     int Listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (Listener < 0) {
         fprintf(stderr, "cearchd: socket: %s\n", strerror(errno));
+        if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
+        FreeRoots(&Daemon);
         FreeDaemonIndex(&Daemon);
         return 1;
     }
@@ -564,6 +584,8 @@ static int RunDaemon(const char *Database, const char *SocketPath) {
     if (strlen(SocketPath) >= sizeof(Address.sun_path)) {
         fprintf(stderr, "cearchd: socket path too long\n");
         close(Listener);
+        if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
+        FreeRoots(&Daemon);
         FreeDaemonIndex(&Daemon);
         return 1;
     }
@@ -576,6 +598,8 @@ static int RunDaemon(const char *Database, const char *SocketPath) {
         fprintf(stderr, "cearchd: cannot bind/listen %s: %s\n", SocketPath, strerror(errno));
         close(Listener);
         (void)unlink(SocketPath);
+        if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
+        FreeRoots(&Daemon);
         FreeDaemonIndex(&Daemon);
         return 1;
     }
@@ -586,21 +610,49 @@ static int RunDaemon(const char *Database, const char *SocketPath) {
     sigaction(SIGTERM, &Action, nullptr);
     Daemon.Listener = Listener;
     Daemon.Running = true;
-    fprintf(stderr, "cearchd: serving %zu entries on %s\n", Daemon.EntryCount, SocketPath);
+    Daemon.LastReconcile = time(nullptr);
+    fprintf(stderr, "cearchd: serving %zu entries on %s%s\n",
+            Daemon.EntryCount, SocketPath, Daemon.RootCount ? " with live reconciliation" : "");
 
     while (!StopRequested) {
-        int Client = accept4(Listener, nullptr, nullptr, SOCK_CLOEXEC);
-        if (Client < 0) {
+        struct pollfd PollDescriptors[2];
+        nfds_t PollCount = 1U;
+        PollDescriptors[0] = (struct pollfd){ .fd = Listener, .events = POLLIN };
+        if (Daemon.WatchFd >= 0) {
+            PollDescriptors[1] = (struct pollfd){ .fd = Daemon.WatchFd, .events = POLLIN };
+            PollCount = 2U;
+        }
+        int PollResult = poll(PollDescriptors, PollCount, 1000);
+        if (PollResult < 0) {
             if (errno == EINTR) continue;
+            fprintf(stderr, "cearchd: poll: %s\n", strerror(errno));
+            break;
+        }
+        if (PollCount == 2U && (PollDescriptors[1].revents & POLLIN) != 0) {
+            DrainWatchEvents(&Daemon);
+        }
+        time_t Now = time(nullptr);
+        if (Daemon.RootCount && ((Daemon.Dirty && Now - Daemon.LastReconcile >= 1) ||
+                                 Now - Daemon.LastReconcile >= CearchReconcileInterval)) {
+            (void)ReconcileDaemon(&Daemon);
+        }
+        if ((PollDescriptors[0].revents & POLLIN) == 0) continue;
+        int Client = accept4(Listener, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
+        if (Client < 0) {
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
             fprintf(stderr, "cearchd: accept: %s\n", strerror(errno));
             break;
         }
+        /* Connections are handled synchronously with bounded protocol payloads. */
+        (void)fcntl(Client, F_SETFL, fcntl(Client, F_GETFL, 0) & ~O_NONBLOCK);
         (void)HandleClient(&Daemon, Client);
         close(Client);
     }
 
     close(Listener);
+    if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
     (void)unlink(SocketPath);
+    FreeRoots(&Daemon);
     FreeDaemonIndex(&Daemon);
     return 0;
 }
