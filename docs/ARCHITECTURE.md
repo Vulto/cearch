@@ -18,7 +18,7 @@ The snapshot stores sorted trigram metadata, delta-coded numeric file IDs, and s
 
 ## Daemon and protocol
 
-`cearchd` serves bounded, versioned request/response messages over a Unix-domain stream socket. The socket is owner-only, and clients cannot send arbitrary path offsets or pointers. The daemon supports name search, content search, stats, ping, and shutdown. It is currently a single-threaded foreground process; a long-running content search can delay subsequent clients. Multi-client concurrency and load testing remain future work.
+`cearchd` serves bounded, versioned request/response messages over a Unix-domain stream socket. The socket is owner-only, and clients cannot send arbitrary path offsets or pointers. Accepted clients run in detached worker threads, capped at 64 active clients, with 10-second socket I/O timeouts. A read/write lock allows concurrent readers while reconciliation swaps the mapped snapshot. Concurrent requests and partial-request isolation are tested; saturation, shutdown-under-load, and cancellation still need stress testing.
 
 ## Filesystem reconciliation
 
@@ -36,7 +36,7 @@ Fuzzy terms compare against alphanumeric filename tokens with bounded edit dista
 
 1. Establish repeatable benchmark baselines and profile indexing, name search, and content search before making performance claims.
 2. Improve content-index coverage and construction efficiency; current per-file and aggregate budgets preserve correctness through fallback scans but can leave large portions of a tree unindexed.
-3. Add bounded multi-client processing, deadlines/cancellation, protocol fuzzing, and load tests.
+3. Stress bounded multi-client processing, shutdown-under-load, socket deadlines, protocol fuzzing, and cancellation.
 4. Evaluate an append-only update journal and snapshot compaction against measured update costs; keep full reconciliation as the correctness fallback.
 5. Expand filesystem race tests, failure injection for snapshot writes, and malformed database fuzzing.
 6. Evaluate portable on-disk encoding and packaging/service integration only after compatibility and deployment requirements are defined.
