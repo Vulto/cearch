@@ -197,7 +197,6 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
 
 static void FreeDaemonIndex(CearchDaemon *Daemon) {
     CearchFreeNameIndex(&Daemon->NameIndex);
-    for (size_t Index = 0; Index < Daemon->EntryCount; ++Index) free(Daemon->Entries[Index].Path);
     free(Daemon->Entries);
     Daemon->Entries = nullptr;
     Daemon->EntryCount = 0;
