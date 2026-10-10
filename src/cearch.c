@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "index.h"
+#include "store.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
