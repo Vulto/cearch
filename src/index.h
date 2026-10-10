@@ -19,7 +19,17 @@ typedef struct {
     uint32_t Reserved;
     uint64_t Start;
     uint64_t Count;
+    uint64_t SkipStart;
+    uint64_t SkipCount;
 } CearchTrigramPosting;
+
+typedef struct {
+    uint32_t PostingIndex;
+    uint32_t Ordinal;
+    uint64_t ByteOffset;
+    uint32_t FileId;
+    uint32_t Reserved;
+} CearchPostingSkip;
 
 typedef struct {
     uint32_t *Keys;
@@ -34,6 +44,10 @@ typedef struct {
     size_t TrigramCount;
     const uint32_t *TrigramFileIds;
     size_t TrigramPostingCount;
+    const unsigned char *TrigramData;
+    size_t TrigramDataSize;
+    const CearchPostingSkip *TrigramSkips;
+    size_t TrigramSkipCount;
     bool OwnsNameIndex;
 } CearchIndex;
 
@@ -43,14 +57,24 @@ typedef struct {
     uint64_t Position;
     uint64_t End;
     uint32_t AllCursor;
+    const CearchTrigramPosting *Seed;
+    uint32_t CurrentFileId;
+    bool EncodedSeed;
     bool AllFiles;
     bool Empty;
 } CearchNameCandidateIterator;
 
 bool CearchBuildNameIndex(CearchIndex *Index);
 /* Attaches arrays already validated by CearchStoreOpen or produced by CearchBuildNameIndex. */
-bool CearchAttachNameIndex(CearchIndex *Index, const CearchTrigramPosting *Trigrams,
-                           size_t TrigramCount, const uint32_t *FileIds, size_t FileIdCount);
+bool CearchAttachNameIndex(CearchIndex *Index,
+                           const CearchTrigramPosting *Trigrams, size_t TrigramCount,
+                           const uint32_t *FileIds, size_t FileIdCount,
+                           const unsigned char *PostingData, size_t PostingDataSize,
+                           const CearchPostingSkip *Skips, size_t SkipCount);
+bool CearchEncodeNameIndex(const CearchIndex *Index,
+                           CearchTrigramPosting **EncodedTrigrams,
+                           unsigned char **PostingData, size_t *PostingDataSize,
+                           CearchPostingSkip **Skips, size_t *SkipCount);
 void CearchFreeNameIndex(CearchIndex *Index);
 bool CearchNameQueryPrepare(const char *Query, CearchNameQuery *Prepared);
 void CearchNameQueryFree(CearchNameQuery *Prepared);
