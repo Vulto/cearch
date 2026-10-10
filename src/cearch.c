@@ -21,16 +21,7 @@
 #define CearchMaxQuery (1024U * 1024U)
 
 typedef struct {
-    char *Path;
-    uint64_t Size;
-    int64_t Mtime;
-    uint64_t Device;
-    uint64_t Inode;
-    char Type;
-} FileEntry;
-
-typedef struct {
-    FileEntry *Entries;
+    CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
 } FileTable;
@@ -67,7 +58,7 @@ static bool ReserveEntries(FileTable *Table, size_t Needed) {
         NewCapacity *= 2U;
     }
     if (NewCapacity > SIZE_MAX / sizeof(*Table->Entries)) return false;
-    FileEntry *NewEntries = realloc(Table->Entries, NewCapacity * sizeof(*Table->Entries));
+    CearchFileEntry *NewEntries = realloc(Table->Entries, NewCapacity * sizeof(*Table->Entries));
     if (!NewEntries) return false;
     Table->Entries = NewEntries;
     Table->Capacity = NewCapacity;
@@ -78,7 +69,7 @@ static bool AddEntry(FileTable *Table, const char *Path, const struct stat *Stat
     if (!ReserveEntries(Table, Table->Count + 1U)) return false;
     char *Copy = strdup(Path);
     if (!Copy) return false;
-    Table->Entries[Table->Count++] = (FileEntry){
+    Table->Entries[Table->Count++] = (CearchFileEntry){
         .Path = Copy,
         .Size = Status->st_size < 0 ? 0U : (uint64_t)Status->st_size,
         .Mtime = (int64_t)Status->st_mtime,
@@ -201,7 +192,7 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
 
     size_t StringOffset = 0;
     for (size_t Index = 0; Index < Table.Count; ++Index) {
-        FileEntry *Source = &Table.Entries[Index];
+        CearchFileEntry *Source = &Table.Entries[Index];
         size_t Length = strlen(Source->Path);
         Entries[Index] = (CearchDiskEntry){
             .PathOffset = (uint32_t)StringOffset,
@@ -255,7 +246,7 @@ static bool LoadDatabase(const char *Database, FileTable *Table) {
             FreeTable(Table);
             return false;
         }
-        Table->Entries[Table->Count++] = (FileEntry){
+        Table->Entries[Table->Count++] = (CearchFileEntry){
             .Path = Copy,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
@@ -286,7 +277,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     if (!LoadDatabase(Database, &Table)) return false;
 
     CearchIndex Index = {0};
-    Index.Entries = (CearchFileEntry *)Table.Entries;
+    Index.Entries = Table.Entries;
     Index.Count = Table.Count;
     if (!CearchBuildNameIndex(&Index)) {
         fprintf(stderr, "cearch: could not build trigram index\n");
@@ -299,7 +290,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     size_t QueryLength = strlen(Query);
     bool UseTrigrams = QueryLength >= 3U && !MatchPath;
     for (size_t EntryIndex = 0; EntryIndex < Table.Count; ++EntryIndex) {
-        const FileEntry *Entry = &Table.Entries[EntryIndex];
+        const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
         if (UseTrigrams && !CearchNameCandidate(&Index, Query, (uint32_t)EntryIndex)) continue;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
@@ -371,7 +362,7 @@ static bool ContentCommand(const char *Database, const char *Query, size_t Limit
     if (!LoadDatabase(Database, &Table)) return false;
     size_t Found = 0;
     for (size_t Index = 0; Index < Table.Count; ++Index) {
-        const FileEntry *Entry = &Table.Entries[Index];
+        const CearchFileEntry *Entry = &Table.Entries[Index];
         if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
         if (puts(Entry->Path) == EOF) {
             FreeTable(&Table);
