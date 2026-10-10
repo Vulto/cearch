@@ -11,7 +11,7 @@ cearch: src/cearch.c src/index.c src/indexer.c src/indexer.h src/index.h src/que
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c src/indexer.c src/query.c src/store.c
 
 cearchd: src/daemon.c src/index.c src/indexer.c src/indexer.h src/protocol.h src/index.h src/query.c src/query.h src/store.c src/store.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/daemon.c src/index.c src/indexer.c src/query.c src/store.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -pthread -o $@ src/daemon.c src/index.c src/indexer.c src/query.c src/store.c
 
 tests/index_test: tests/index_test.c src/index.c src/index.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/index_test.c src/index.c
@@ -27,7 +27,10 @@ unit-test: tests/index_test tests/store_test tests/query_test
 	./tests/store_test
 	./tests/query_test
 
-integration-test: cearch cearchd
+tests/slow_client: tests/slow_client.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/slow_client.c
+
+integration-test: cearch cearchd tests/slow_client
 	sh tests/smoke.sh ./cearch
 	sh tests/daemon.sh ./cearchd
 
@@ -52,4 +55,4 @@ install: cearch cearchd
 	install -Dm644 docs/TESTING.md $(DESTDIR)/usr/local/share/doc/cearch/TESTING.md
 
 clean:
-	rm -f cearch cearchd tests/index_test tests/store_test tests/query_test
+	rm -f cearch cearchd tests/index_test tests/store_test tests/query_test tests/slow_client
