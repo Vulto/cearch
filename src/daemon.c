@@ -2,6 +2,11 @@
 #include "protocol.h"
 #include "store.h"
 #include "index.h"
+#include "indexer.h"
+#include <dirent.h>
+#include <poll.h>
+#include <sys/inotify.h>
+#include <time.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -23,6 +28,8 @@
 #define CearchDefaultLimit 1000U
 #define CearchMaximumClients 64U
 #define CearchReadBufferSize 4096U
+#define CearchWatchBufferSize (64U * 1024U)
+#define CearchReconcileInterval 30
 
 typedef struct {
     CearchStore Store;
@@ -32,6 +39,11 @@ typedef struct {
     char *Database;
     int Listener;
     bool Running;
+    char **Roots;
+    size_t RootCount;
+    int WatchFd;
+    bool Dirty;
+    time_t LastReconcile;
 } CearchDaemon;
 
 static volatile sig_atomic_t StopRequested = 0;
