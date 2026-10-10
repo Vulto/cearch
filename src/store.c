@@ -158,7 +158,7 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
             uint64_t PathEnd = (uint64_t)Entry->PathOffset + Entry->PathLength;
             if (Entry->PathLength == 0U || PathEnd >= Header->StringSize ||
                 Entry->Type < 1U || Entry->Type > 3U ||
-                Strings[PathEnd] != '\\0') {
+                Strings[PathEnd] != '\0') {
                 Valid = false;
                 break;
             }
