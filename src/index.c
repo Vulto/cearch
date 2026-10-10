@@ -172,25 +172,32 @@ static bool QueryTrigramKeys(const char *Query, uint32_t **Keys, size_t *Count) 
     return true;
 }
 
+static bool PostingContains(const CearchIndex *Index,
+                            const CearchTrigramPosting *Posting, uint32_t FileId) {
+    if (!Index || !Posting || !Index->TrigramFileIds ||
+        Posting->Start > Index->TrigramPostingCount ||
+        Posting->Count > Index->TrigramPostingCount - (size_t)Posting->Start) return false;
+    size_t Low = (size_t)Posting->Start;
+    size_t High = Low + (size_t)Posting->Count;
+    while (Low < High) {
+        size_t Mid = Low + (High - Low) / 2U;
+        uint32_t Candidate = Index->TrigramFileIds[Mid];
+        if (Candidate < FileId) Low = Mid + 1U;
+        else High = Mid;
+    }
+    return Low < (size_t)Posting->Start + (size_t)Posting->Count &&
+           Index->TrigramFileIds[Low] == FileId;
+}
+
 static bool HasAllQueryTrigrams(const CearchIndex *Index, uint32_t FileId,
                                 const uint32_t *Keys, size_t KeyCount) {
-    for (size_t KeyIndex = 0; KeyIndex < KeyCount; ++KeyIndex) {
+    for (size_t KeyIndex = 0U; KeyIndex < KeyCount; ++KeyIndex) {
         const CearchTrigramPosting *Posting = FindPosting(Index, Keys[KeyIndex]);
-        if (!Posting || Posting->Start > Index->TrigramPostingCount ||
-            Posting->Count > Index->TrigramPostingCount - (size_t)Posting->Start) return false;
-        size_t Low = (size_t)Posting->Start;
-        size_t High = Low + (size_t)Posting->Count;
-        while (Low < High) {
-            size_t Mid = Low + (High - Low) / 2U;
-            uint32_t Candidate = Index->TrigramFileIds[Mid];
-            if (Candidate < FileId) Low = Mid + 1U;
-            else High = Mid;
-        }
-        if (Low >= (size_t)Posting->Start + (size_t)Posting->Count ||
-            Index->TrigramFileIds[Low] != FileId) return false;
+        if (!Posting || !PostingContains(Index, Posting, FileId)) return false;
     }
     return true;
 }
+
 
 bool CearchBuildNameIndex(CearchIndex *Index) {
     if (!Index) return false;
