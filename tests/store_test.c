@@ -36,10 +36,14 @@ static void WriteValidSnapshot(const char *Database,
                                const char *Path,
                                const CearchTrigramPosting *Trigrams,
                                size_t TrigramCount,
-                               const uint32_t *FileIds,
+                               const unsigned char *PostingData,
+                               size_t PostingDataSize,
+                               const CearchPostingSkip *Skips,
+                               size_t SkipCount,
                                size_t PostingCount) {
     assert(CearchStoreWrite(Database, Entry, 1U, Path, strlen(Path) + 1U,
-                            Trigrams, TrigramCount, FileIds, PostingCount));
+                            Trigrams, TrigramCount, PostingData, PostingDataSize,
+                            Skips, SkipCount, PostingCount));
 }
 
 int main(void) {
@@ -58,8 +62,12 @@ int main(void) {
     const CearchTrigramPosting Trigrams[] = {
         { .Key = 0x616263U, .Reserved = 0U, .Start = 0U, .Count = 1U }
     };
-    const uint32_t FileIds[] = { 0U };
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    const unsigned char PostingData[] = { 0U };
+    const CearchPostingSkip Skips[] = {
+        { .PostingIndex = 0U, .Ordinal = 0U, .ByteOffset = 0U, .FileId = 0U, .Reserved = 0U }
+    };
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData,
+                       sizeof(PostingData), Skips, 1U, 1U);
 
     CearchStore Store = { .Descriptor = -1 };
     assert(CearchStoreOpen(Database, &Store));
@@ -70,7 +78,10 @@ int main(void) {
     assert(Store.Trigrams[0].Key == 0x616263U);
     assert(Store.Trigrams[0].Start == 0U);
     assert(Store.Trigrams[0].Count == 1U);
-    assert(Store.TrigramFileIds[0] == 0U);
+    assert(Store.TrigramDataSize == sizeof(PostingData));
+    assert(Store.TrigramData[0] == 0U);
+    assert(Store.TrigramSkipCount == 1U);
+    assert(Store.TrigramSkips[0].FileId == 0U);
     CearchStoreClose(&Store);
 
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
