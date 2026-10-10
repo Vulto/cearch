@@ -29,9 +29,18 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" ping >/dev/null 2>&1;
     if [ "$Attempts" -ge 50 ]; then echo 'daemon failed to start' >&2; exit 1; fi
     sleep 0.1
 done
-./tests/slow_client "$TempDir/run/cearch.sock" &
+./tests/slow_client "$TempDir/run/cearch.sock" "$TempDir/slow-ready" &
 SlowPid=$!
+Attempts=0
+until [ -f "$TempDir/slow-ready" ]; do
+    Attempts=$((Attempts + 1))
+    if [ "$Attempts" -ge 50 ]; then echo 'slow client failed to connect' >&2; exit 1; fi
+    sleep 0.02
+done
 timeout 1 "$Daemon" client --socket "$TempDir/run/cearch.sock" ping > /dev/null
+printf 'during_slow_client_marker\n' > "$TempDir/root/during-slow.txt"
+timeout 1.5 "$Daemon" client --socket "$TempDir/run/cearch.sock" search during-slow > "$TempDir/during-slow-search"
+grep -q '/during-slow.txt$' "$TempDir/during-slow-search"
 wait "$SlowPid"
 SlowPid=
 ClientPids=""
@@ -74,7 +83,7 @@ grep -q '/needle.txt$' "$TempDir/content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content large_fallback_token > "$TempDir/large-content"
 grep -q '/large.txt$' "$TempDir/large-content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/stats"
-grep -q '^entries: 8$' "$TempDir/stats"
+grep -q '^entries: 9$' "$TempDir/stats"
 printf 'live_reconciliation_marker\n' > "$TempDir/root/new-arrival.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search new-arrival > "$TempDir/live-search" &&
@@ -86,7 +95,7 @@ done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content live_reconciliation_marker > "$TempDir/live-content"
 grep -q '/new-arrival.txt$' "$TempDir/live-content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/live-stats"
-grep -q '^entries: 9$' "$TempDir/live-stats"
+grep -q '^entries: 10$' "$TempDir/live-stats"
 rm "$TempDir/root/needle.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/removed-search" &&
@@ -96,7 +105,7 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$Tem
     sleep 0.1
 done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/removed-stats"
-grep -q '^entries: 8$' "$TempDir/removed-stats"
+grep -q '^entries: 9$' "$TempDir/removed-stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
 DaemonPid=
