@@ -27,6 +27,16 @@ typedef struct {
 } CearchNameQuery;
 
 typedef struct {
+    const CearchIndex *Index;
+    const CearchNameQuery *Query;
+    uint64_t Position;
+    uint64_t End;
+    uint32_t AllCursor;
+    bool AllFiles;
+    bool Empty;
+} CearchNameCandidateIterator;
+
+typedef struct {
     CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
@@ -44,6 +54,9 @@ bool CearchAttachNameIndex(CearchIndex *Index, const CearchTrigramPosting *Trigr
 void CearchFreeNameIndex(CearchIndex *Index);
 bool CearchNameQueryPrepare(const char *Query, CearchNameQuery *Prepared);
 void CearchNameQueryFree(CearchNameQuery *Prepared);
+bool CearchNameCandidatesBegin(const CearchIndex *Index, const CearchNameQuery *Query,
+                               CearchNameCandidateIterator *Iterator);
+bool CearchNameCandidatesNext(CearchNameCandidateIterator *Iterator, uint32_t *FileId);
 bool CearchNameCandidatePrepared(const CearchIndex *Index, const CearchNameQuery *Query, uint32_t FileId);
 bool CearchNameCandidate(CearchIndex *Index, const char *Query, uint32_t FileId);
 
