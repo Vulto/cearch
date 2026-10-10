@@ -92,7 +92,7 @@ static bool BuildTrigramIndex(CearchIndex *Index) {
         return false;
     }
     Index->TrigramCount = UniqueKeys;
-    Index->CearchTrigramPostingCount = PostingCount;
+    Index->TrigramPostingCount = PostingCount;
 
     size_t PostingIndex = 0, KeyIndex = 0;
     while (PostingIndex < PostingCount) {
@@ -145,17 +145,6 @@ static bool QueryTrigramKeys(const char *Query, uint32_t **Keys, size_t *Count) 
     }
     *Keys = Result;
     return true;
-}
-
-static const CearchTrigramPosting *FindSmallestPosting(const CearchIndex *Index,
-                                                        const uint32_t *Keys, size_t KeyCount) {
-    const CearchTrigramPosting *Smallest = nullptr;
-    for (size_t KeyIndex = 0; KeyIndex < KeyCount; ++KeyIndex) {
-        const CearchTrigramPosting *Posting = FindPosting(Index, Keys[KeyIndex]);
-        if (!Posting) return nullptr;
-        if (!Smallest || Posting->Count < Smallest->Count) Smallest = Posting;
-    }
-    return Smallest;
 }
 
 static bool HasAllQueryTrigrams(const CearchIndex *Index, uint32_t FileId,
