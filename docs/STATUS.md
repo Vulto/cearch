@@ -1,28 +1,27 @@
 # Implementation status
 
-## Implemented and CI-tested
+## Implemented and tested
 
-- C23-compatible Linux CLI (build flag `-std=gnu2x` for GCC 13 compatibility).
-- Recursive non-symlink-following index scan over one or multiple roots.
-- Versioned binary snapshot replacement using a temporary file, file fsync, and rename.
-- Memory-mapped snapshot validation and path string-table records.
-- Case-insensitive basename search and optional full-path search.
-- Fresh literal content scan of indexed regular files.
-- File/directory statistics.
-- Unit tests for trigram candidate generation and snapshot round-trip/truncated input; CLI smoke tests in GitHub Actions.
-- No mandatory third-party library.
+- C23-compatible Linux CLI and foreground daemon.
+- Recursive non-symlink-following filesystem scan shared by initial indexing and reconciliation.
+- Versioned binary snapshot with atomic replacement and mmap validation.
+- Bounds, type, NUL-terminator, and embedded-NUL path validation.
+- Case-insensitive basename/full-path name queries using in-memory trigram postings with literal verification.
+- Fresh literal content scans of indexed regular files.
+- Unix-domain socket protocol with bounded requests/responses, owner-only socket permissions, stats, ping, and shutdown.
+- Optional recursive inotify watches, queue-overflow handling, event-triggered full scans, and periodic full reconciliation.
+- Unit tests for trigram candidates and snapshot round-trip/corrupt input, plus CLI and daemon integration tests.
+- GCC/Clang CI with warnings as errors and sanitizer coverage.
 
-## Not yet the complete target architecture
+## Still required for the target architecture
 
-This snapshot is a foundational baseline, not the fully specified high-performance search daemon. See [AUDIT.md](AUDIT.md) for confirmed defects and priorities, and [TESTING.md](TESTING.md) for CI rules and coverage gaps. It does not yet implement:
+- Persistent on-disk trigram posting lists and direct mmap queries.
+- Delta-coded/compressed postings and compact parent/name records.
+- Persistent content candidate index.
+- Append-only update journal and snapshot compaction.
+- Query AST, boolean operators, metadata filters, exact/prefix/suffix modes, regex, fuzzy ranking.
+- Bounded parallel client processing and cancellation.
+- Benchmarks over representative datasets, protocol fuzzing, and filesystem race tests.
+- Optional service-manager units and install/runtime packaging polish.
 
-- daemon/client Unix socket protocol;
-- inotify watcher with overflow recovery and reconciliation loop;
-- memory-mapped binary snapshot and WAL/base-delta compaction;
-- filename/path trigram inverted index;
-- persistent content token/trigram inverted index;
-- fuzzy scoring or typo-tolerant edit distance;
-- query AST/Boolean operators/regex or metadata filters;
-- multi-threaded query service and load testing.
-
-The next engineering stage should replace the O(N) scan and text database format with a versioned mmap snapshot and compact posting lists, while retaining the existing CLI contract and regression tests. Do not describe this baseline as meeting millisecond queries over millions of files until benchmarks prove it.
+CI passing validates only the checks it runs. Do not claim millisecond queries over millions of paths until reproducible benchmarks support the claim.
