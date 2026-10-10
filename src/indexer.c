@@ -130,29 +130,33 @@ static bool WalkPath(CearchScanTable *Table, const char *Path) {
 
 static bool WriteSnapshot(const char *Database, const CearchScanTable *Table) {
     if (Table->Count > UINT32_MAX) {
-        fprintf(stderr, "cearch: this snapshot format supports at most UINT32_MAX entries\n");
+        fprintf(stderr, "cearch: snapshot supports at most UINT32_MAX entries\n");
         return false;
     }
-    size_t StringsSize = 0;
-    for (size_t Index = 0; Index < Table->Count; ++Index) {
+
+    size_t StringsSize = 0U;
+    for (size_t Index = 0U; Index < Table->Count; ++Index) {
         size_t Length = strlen(Table->Entries[Index].Path);
-        if (Length > UINT32_MAX || StringsSize > UINT32_MAX - Length - 1U) {
+        if (Length > UINT32_MAX || Length + 1U > UINT32_MAX - StringsSize) {
             fprintf(stderr, "cearch: path string table exceeds 4 GiB\n");
             return false;
         }
         StringsSize += Length + 1U;
     }
+
     char *Strings = malloc(StringsSize ? StringsSize : 1U);
     CearchDiskEntry *Entries = calloc(Table->Count ? Table->Count : 1U, sizeof(*Entries));
-    if (!Strings || !Entries) {
+    CearchFileEntry *IndexEntries = calloc(Table->Count ? Table->Count : 1U, sizeof(*IndexEntries));
+    if (!Strings || !Entries || !IndexEntries) {
         fprintf(stderr, "cearch: out of memory creating snapshot\n");
         free(Strings);
         free(Entries);
+        free(IndexEntries);
         return false;
     }
 
-    size_t StringOffset = 0;
-    for (size_t Index = 0; Index < Table->Count; ++Index) {
+    size_t StringOffset = 0U;
+    for (size_t Index = 0U; Index < Table->Count; ++Index) {
         const CearchScanEntry *Source = &Table->Entries[Index];
         size_t Length = strlen(Source->Path);
         Entries[Index] = (CearchDiskEntry){
@@ -164,13 +168,33 @@ static bool WriteSnapshot(const char *Database, const CearchScanTable *Table) {
             .Inode = Source->Inode,
             .Type = Source->Type == 'f' ? 1U : Source->Type == 'd' ? 2U : 3U
         };
+        IndexEntries[Index] = (CearchFileEntry){
+            .Path = Source->Path,
+            .Size = Source->Size,
+            .Mtime = Source->Mtime,
+            .Device = Source->Device,
+            .Inode = Source->Inode,
+            .Type = Source->Type
+        };
         memcpy(Strings + StringOffset, Source->Path, Length + 1U);
         StringOffset += Length + 1U;
     }
 
-    bool Success = CearchStoreWrite(Database, Entries, Table->Count, Strings, StringsSize);
+    CearchIndex NameIndex = {
+        .Entries = IndexEntries,
+        .Count = Table->Count
+    };
+    bool Success = CearchBuildNameIndex(&NameIndex);
+    if (Success) {
+        Success = CearchStoreWrite(Database, Entries, Table->Count, Strings, StringsSize,
+                                   NameIndex.Trigrams, NameIndex.TrigramCount,
+                                   NameIndex.TrigramFileIds, NameIndex.TrigramPostingCount);
+    }
     if (!Success)
-        fprintf(stderr, "cearch: failed writing snapshot %s: %s\n", Database, strerror(errno));
+        fprintf(stderr, "cearch: failed building or writing snapshot %s: %s\n", Database, strerror(errno));
+
+    CearchFreeNameIndex(&NameIndex);
+    free(IndexEntries);
     free(Strings);
     free(Entries);
     return Success;
