@@ -3,7 +3,9 @@ set -eu
 Daemon=${1:-./cearchd}
 TempDir=$(mktemp -d)
 DaemonPid=
+SlowPid=
 cleanup() {
+    if [ -n "$SlowPid" ]; then kill "$SlowPid" 2>/dev/null || true; wait "$SlowPid" 2>/dev/null || true; fi
     if [ -n "$DaemonPid" ]; then kill "$DaemonPid" 2>/dev/null || true; wait "$DaemonPid" 2>/dev/null || true; fi
     rm -rf "$TempDir"
 }
@@ -17,7 +19,7 @@ printf 'daemon_newline_payload\n' > "$OddPath"
 printf 'exact fuzzy result\n' > "$TempDir/root/report.txt"
 printf 'typo fuzzy result\n' > "$TempDir/root/reprot.txt"
 printf 'large_fallback_token\n' > "$TempDir/root/large.txt"
-yes 'padding' | head -c 600000 >> "$TempDir/root/large.txt"
+yes 'padding' 2>/dev/null | head -c 600000 >> "$TempDir/root/large.txt"
 ./cearch index --db "$TempDir/state/index.db" "$TempDir/root"
 "$Daemon" serve --db "$TempDir/state/index.db" --socket "$TempDir/run/cearch.sock" --root "$TempDir/root" &
 DaemonPid=$!
@@ -26,6 +28,24 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" ping >/dev/null 2>&1;
     Attempts=$((Attempts + 1))
     if [ "$Attempts" -ge 50 ]; then echo 'daemon failed to start' >&2; exit 1; fi
     sleep 0.1
+done
+./tests/slow_client "$TempDir/run/cearch.sock" &
+SlowPid=$!
+timeout 1 "$Daemon" client --socket "$TempDir/run/cearch.sock" ping > /dev/null
+wait "$SlowPid"
+SlowPid=
+ClientPids=""
+Index=1
+while [ "$Index" -le 16 ]; do
+    "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/concurrent-$Index" &
+    ClientPids="$ClientPids $!"
+    Index=$((Index + 1))
+done
+for ClientPid in $ClientPids; do wait "$ClientPid"; done
+Index=1
+while [ "$Index" -le 16 ]; do
+    grep -q '/needle.txt$' "$TempDir/concurrent-$Index"
+    Index=$((Index + 1))
 done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/search"
 grep -q '/needle.txt$' "$TempDir/search"
