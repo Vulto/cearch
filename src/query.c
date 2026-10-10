@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #define CearchQueryMaximumLength 4096U
 #define CearchQueryMaximumTokens 128U
@@ -145,6 +146,110 @@ static void NextToken(CearchParser *Parser) {
     else Parser->Type = TokenTerm;
 }
 
+static bool CompareValue(uint64_t Left, CearchQueryComparison Comparison, uint64_t Right) {
+    switch (Comparison) {
+        case CearchQueryCompareEqual: return Left == Right;
+        case CearchQueryCompareGreater: return Left > Right;
+        case CearchQueryCompareLess: return Left < Right;
+        case CearchQueryCompareGreaterEqual: return Left >= Right;
+        case CearchQueryCompareLessEqual: return Left <= Right;
+    }
+    return false;
+}
+
+static bool ParseValueAndUnit(const char *Text, bool Duration,
+                              CearchQueryComparison *Comparison, uint64_t *Value) {
+    const char *Cursor = Text;
+    if (Cursor[0] == '>' && Cursor[1] == '=') {
+        *Comparison = CearchQueryCompareGreaterEqual;
+        Cursor += 2;
+    } else if (Cursor[0] == '<' && Cursor[1] == '=') {
+        *Comparison = CearchQueryCompareLessEqual;
+        Cursor += 2;
+    } else if (*Cursor == '>') {
+        *Comparison = CearchQueryCompareGreater;
+        ++Cursor;
+    } else if (*Cursor == '<') {
+        *Comparison = CearchQueryCompareLess;
+        ++Cursor;
+    } else if (*Cursor == '=') {
+        *Comparison = CearchQueryCompareEqual;
+        ++Cursor;
+    } else {
+        return false;
+    }
+    if (*Cursor < '0' || *Cursor > '9') return false;
+    uint64_t Number = 0U;
+    while (*Cursor >= '0' && *Cursor <= '9') {
+        uint64_t Digit = (uint64_t)(*Cursor - '0');
+        if (Number > (UINT64_MAX - Digit) / 10U) return false;
+        Number = Number * 10U + Digit;
+        ++Cursor;
+    }
+    uint64_t Multiplier = 1U;
+    if (!*Cursor) {
+        Multiplier = 1U;
+    } else if (!Duration && strcasecmp(Cursor, "b") == 0) Multiplier = 1U;
+    else if (!Duration && strcasecmp(Cursor, "kb") == 0) Multiplier = 1024ULL;
+    else if (!Duration && strcasecmp(Cursor, "mb") == 0) Multiplier = 1024ULL * 1024ULL;
+    else if (!Duration && strcasecmp(Cursor, "gb") == 0) Multiplier = 1024ULL * 1024ULL * 1024ULL;
+    else if (!Duration && strcasecmp(Cursor, "tb") == 0) Multiplier = 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    else if (Duration && strcasecmp(Cursor, "s") == 0) Multiplier = 1U;
+    else if (Duration && strcasecmp(Cursor, "m") == 0) Multiplier = 60U;
+    else if (Duration && strcasecmp(Cursor, "h") == 0) Multiplier = 3600U;
+    else if (Duration && strcasecmp(Cursor, "d") == 0) Multiplier = 86400U;
+    else if (Duration && strcasecmp(Cursor, "w") == 0) Multiplier = 604800U;
+    else return false;
+    if (Number > UINT64_MAX / Multiplier) return false;
+    *Value = Number * Multiplier;
+    return true;
+}
+
+static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
+    if (Mode != CearchQuerySubstring) return BuildTermNode(Term, Mode);
+    CearchQueryNodeType Type = CearchQueryTerm;
+    if (strncasecmp(Term, "ext:", 4U) == 0) {
+        Type = CearchQueryFilterExtension;
+        memmove(Term, Term + 4U, strlen(Term + 4U) + 1U);
+        if (*Term == '.') memmove(Term, Term + 1U, strlen(Term));
+        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+    } else if (strncasecmp(Term, "type:", 5U) == 0) {
+        Type = CearchQueryFilterType;
+        memmove(Term, Term + 5U, strlen(Term + 5U) + 1U);
+        if (strcasecmp(Term, "file") != 0 && strcasecmp(Term, "dir") != 0 &&
+            strcasecmp(Term, "other") != 0) { free(Term); errno = EINVAL; return NULL; }
+    } else if (strncasecmp(Term, "path:", 5U) == 0) {
+        Type = CearchQueryFilterPath;
+        memmove(Term, Term + 5U, strlen(Term + 5U) + 1U);
+        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+    } else if (strncasecmp(Term, "in:", 3U) == 0) {
+        Type = CearchQueryFilterIn;
+        memmove(Term, Term + 3U, strlen(Term + 3U) + 1U);
+        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+    } else if (strncasecmp(Term, "size:", 5U) == 0 ||
+               strncasecmp(Term, "mtime:", 6U) == 0) {
+        bool IsMtime = strncasecmp(Term, "mtime:", 6U) == 0;
+        const char *ValueText = Term + (IsMtime ? 6U : 5U);
+        CearchQueryComparison Comparison;
+        uint64_t Value;
+        if (!ParseValueAndUnit(ValueText, IsMtime, &Comparison, &Value)) {
+            free(Term);
+            errno = EINVAL;
+            return NULL;
+        }
+        free(Term);
+        CearchQueryNode *Node = NewNode(IsMtime ? CearchQueryFilterMtime : CearchQueryFilterSize,
+                                        NULL, NULL, NULL, CearchQuerySubstring);
+        if (Node) {
+            Node->Comparison = Comparison;
+            Node->Value = Value;
+        }
+        return Node;
+    }
+    CearchQueryNode *Node = NewNode(Type, NULL, NULL, Term, CearchQuerySubstring);
+    return Node;
+}
+
 static CearchQueryNode *ParseOr(CearchParser *Parser);
 
 static CearchQueryNode *ParsePrimary(CearchParser *Parser) {
@@ -266,20 +371,71 @@ static bool MatchTerm(const CearchQueryNode *Node, const char *Text) {
     return false;
 }
 
-static bool MatchNode(const CearchQueryNode *Node, const char *Text) {
+static const char *BaseName(const char *Path) {
+    const char *Slash = strrchr(Path, '/');
+    return Slash ? Slash + 1 : Path;
+}
+
+static bool MatchFilter(const CearchQueryNode *Node, const CearchFileEntry *Entry) {
+    if (!Entry) return false;
+    switch (Node->Type) {
+        case CearchQueryFilterExtension: {
+            const char *Base = BaseName(Entry->Path);
+            const char *Dot = strrchr(Base, '.');
+            return Dot && Dot != Base && strcasecmp(Dot + 1, Node->Term) == 0;
+        }
+        case CearchQueryFilterType:
+            if (strcasecmp(Node->Term, "file") == 0) return Entry->Type == 'f';
+            if (strcasecmp(Node->Term, "dir") == 0) return Entry->Type == 'd';
+            return Entry->Type == 'o';
+        case CearchQueryFilterSize:
+            return CompareValue(Entry->Size, Node->Comparison, Node->Value);
+        case CearchQueryFilterMtime: {
+            time_t Current = time(NULL);
+            if (Current < 0 || Entry->Mtime < 0) return false;
+            uint64_t Age = (int64_t)Current > Entry->Mtime
+                ? (uint64_t)((int64_t)Current - Entry->Mtime) : 0U;
+            return CompareValue(Age, Node->Comparison, Node->Value);
+        }
+        case CearchQueryFilterPath:
+            return ContainsCaseInsensitive(Entry->Path, Node->Term);
+        case CearchQueryFilterIn: {
+            size_t RootLength = strlen(Node->Term);
+            while (RootLength > 1U && Node->Term[RootLength - 1U] == '/') --RootLength;
+            if (strncmp(Entry->Path, Node->Term, RootLength) != 0) return false;
+            return Entry->Path[RootLength] == '\0' || Entry->Path[RootLength] == '/';
+        }
+        default:
+            return false;
+    }
+}
+
+static bool MatchNode(const CearchQueryNode *Node, const CearchFileEntry *Entry, const char *Text) {
     switch (Node->Type) {
         case CearchQueryTerm:
             return MatchTerm(Node, Text);
+        case CearchQueryFilterExtension:
+        case CearchQueryFilterType:
+        case CearchQueryFilterSize:
+        case CearchQueryFilterMtime:
+        case CearchQueryFilterPath:
+        case CearchQueryFilterIn:
+            return MatchFilter(Node, Entry);
         case CearchQueryNot:
-            return !MatchNode(Node->Left, Text);
+            return !MatchNode(Node->Left, Entry, Text);
         case CearchQueryAnd:
-            return MatchNode(Node->Left, Text) && MatchNode(Node->Right, Text);
+            return MatchNode(Node->Left, Entry, Text) && MatchNode(Node->Right, Entry, Text);
         case CearchQueryOr:
-            return MatchNode(Node->Left, Text) || MatchNode(Node->Right, Text);
+            return MatchNode(Node->Left, Entry, Text) || MatchNode(Node->Right, Entry, Text);
     }
     return false;
 }
 
 bool CearchQueryMatches(const CearchQuery *Query, const char *Text) {
-    return Query && Query->Root && Text && MatchNode(Query->Root, Text);
+    return Query && Query->Root && Text && MatchNode(Query->Root, NULL, Text);
+}
+
+bool CearchQueryMatchesEntry(const CearchQuery *Query,
+                             const CearchFileEntry *Entry, const char *Text) {
+    return Query && Query->Root && Entry && Text && MatchNode(Query->Root, Entry, Text);
 }
