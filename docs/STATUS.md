@@ -7,6 +7,7 @@
 - Versioned, validated snapshot with atomic replacement, file sync, rename, and parent-directory sync.
 - Persisted trigram metadata, delta-coded posting IDs, skip checkpoints, and mapped posting lookup for filename/path searches.
 - Case-insensitive basename/full-path substring search with literal verification.
+- Bounded query AST with quoted phrases, boolean `NOT`/`AND`/`OR`, parentheses, and exact/prefix/suffix term modes.
 - Fresh literal content scans of indexed regular files; content reads are not backed by a persistent content index.
 - Unix-domain socket protocol with bounded request/response sizes, owner-only socket permissions, search/content/stats/ping/shutdown commands.
 - Optional recursive inotify watches, event-triggered full scans, queue-overflow handling, and periodic reconciliation.
@@ -16,7 +17,7 @@
 ## Remaining target work
 
 - Persistent content candidate index with current-content verification and update/recovery semantics.
-- Query AST and boolean operators, metadata filters, exact/prefix/suffix modes, regex, and fuzzy ranking.
+- Metadata filters, regex, and fuzzy ranking. Compound boolean queries currently scan paths; acceleration and broader query-language tests remain needed.
 - Bounded parallel client processing, timeouts/cancellation, and load testing.
 - Append-only update journal and snapshot compaction; establish whether benchmarks justify this complexity.
 - Repeatable benchmark datasets and reports, protocol fuzzing, filesystem race tests, and broader failure-injection coverage.
