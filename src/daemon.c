@@ -227,7 +227,6 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         Base = Base ? Base + 1 : Entry->Path;
         const char *Haystack = MatchPath ? Entry->Path : Base;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
-        if (UseTrigrams && !CearchNameCandidatePrepared(&Daemon->NameIndex, &Prepared, (uint32_t)Index)) continue;
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
             CearchNameQueryFree(&Prepared);
