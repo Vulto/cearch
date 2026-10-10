@@ -123,14 +123,6 @@ static bool LoadDatabase(const char *Database, FileTable *Table, CearchStore *St
     return true;
 }
 
-static bool ContainsCaseInsensitive(const char *Haystack, const char *Needle) {
-    if (!*Needle) return true;
-    size_t NeedleLength = strlen(Needle);
-    for (const char *Start = Haystack; *Start; ++Start)
-        if (strncasecmp(Start, Needle, NeedleLength) == 0) return true;
-    return false;
-}
-
 static const char *BaseName(const char *Path) {
     const char *Slash = strrchr(Path, '/');
     return Slash ? Slash + 1 : Path;
