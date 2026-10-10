@@ -1,0 +1,16 @@
+# Cearch CI: compile and execute integration tests
+name: C23
+on:
+  push:
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc
+      - name: Build
+        run: make CC=gcc
+      - name: Test
+        run: make test CC=gcc
