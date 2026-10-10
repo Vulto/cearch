@@ -49,7 +49,7 @@ SearchMs=$(elapsed_ms "$Program" search --db "$Db" "document-$FileCount")
 printf '%s\n' "$SearchMs"
 
 printf 'content_scan_ms: '
-ContentMs=$(elapsed_ms "$Program" content --db "$Db" "searchable_token_997")
+ContentMs=$(elapsed_ms "$Program" content --db "$Db" "searchable_token_996")
 printf '%s\n' "$ContentMs"
 
 printf 'Note: timings are single-run wall-clock measurements, not statistically robust; query runs follow indexing and may use warm filesystem cache. Repeat runs and record machine/cache conditions before comparing changes.\n'
