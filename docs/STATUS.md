@@ -18,11 +18,11 @@
 
 - Improve content-index coverage and construction efficiency; large/over-budget files currently use fallback scans.
 - Regex and fuzzy matching/scoring are implemented. Fuzzy queries scan all indexed names and retain only the best limited result set; compound boolean queries and metadata filters also scan paths.
-- Bounded parallel client processing, timeouts/cancellation, and load testing.
+- Worker concurrency is bounded at 64 clients with 10-second socket I/O timeouts; sustained saturation, slow-reader, shutdown-under-load, and search cancellation tests remain.
 - Append-only update journal and snapshot compaction; establish whether benchmarks justify this complexity.
-- Repeatable benchmark datasets and reports, protocol fuzzing, filesystem race tests, and broader failure-injection coverage.
+- Benchmark harness supports repeated samples, medians, indexing RSS, snapshot size, and name/regex/fuzzy/content query measurements. Large-scale reports, protocol fuzzing, filesystem race tests, and broader failure-injection coverage remain.
 - Structured output formats beyond newline-delimited and NUL-delimited paths.
-- Portable on-disk encoding is not a promise of the current native-layout snapshot.
+- Portable on-disk encoding is not a promise of the current native-layout snapshot; version 4 requires older snapshots to be rebuilt.
 - Optional service-manager units and runtime packaging polish.
 
 ## Acceptance gate
