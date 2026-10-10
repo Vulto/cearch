@@ -26,7 +26,7 @@ done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/search"
 grep -q '/needle.txt$' "$TempDir/search"
 printf '%s\0' "$OddPath" > "$TempDir/expected-null"
-"$Daemon" client --socket "$TempDir/run/cearch.sock" --null search odd > "$TempDir/actual-null"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" search --null odd > "$TempDir/actual-null"
 cmp "$TempDir/expected-null" "$TempDir/actual-null"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
