@@ -71,6 +71,40 @@ static bool AppendZeros(int Descriptor, size_t Count) {
     return true;
 }
 
+static bool SyncParentDirectory(const char *Database) {
+    const char *Slash = strrchr(Database, '/');
+    char *Directory = nullptr;
+    if (!Slash) {
+        Directory = strdup(".");
+    } else if (Slash == Database) {
+        Directory = strdup("/");
+    } else {
+        size_t Length = (size_t)(Slash - Database);
+        Directory = malloc(Length + 1U);
+        if (Directory) {
+            memcpy(Directory, Database, Length);
+            Directory[Length] = '\0';
+        }
+    }
+    if (!Directory) return false;
+
+    int Descriptor = open(Directory, O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+    int SavedErrno = errno;
+    free(Directory);
+    if (Descriptor < 0) {
+        errno = SavedErrno;
+        return false;
+    }
+    bool Success = fsync(Descriptor) == 0;
+    SavedErrno = errno;
+    if (close(Descriptor) != 0 && Success) {
+        Success = false;
+        SavedErrno = errno;
+    }
+    if (!Success) errno = SavedErrno ? SavedErrno : EIO;
+    return Success;
+}
+
 bool CearchStoreWrite(const char *Database,
                       const CearchDiskEntry *Entries, size_t EntryCount,
                       const char *Strings, size_t StringsSize,
@@ -194,6 +228,10 @@ bool CearchStoreWrite(const char *Database,
         SavedErrno = errno;
     }
     if (Success && rename(Temporary, Database) != 0) {
+        Success = false;
+        SavedErrno = errno;
+    }
+    if (Success && !SyncParentDirectory(Database)) {
         Success = false;
         SavedErrno = errno;
     }
