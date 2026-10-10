@@ -54,7 +54,8 @@ static void WriteValidSnapshot(const char *Database,
     assert(CearchStoreWrite(Database, Entry, 1U, Path, strlen(Path) + 1U,
                             Trigrams, TrigramCount, PostingData, PostingDataSize,
                             Skips, SkipCount, PostingCount,
-                            NULL, 0U, NULL, 0U, NULL, 0U, 0U));
+                            Trigrams, TrigramCount, PostingData, PostingDataSize,
+                            Skips, SkipCount, PostingCount));
 }
 
 int main(void) {
@@ -93,6 +94,11 @@ int main(void) {
     assert(Store.TrigramData[0] == 0U);
     assert(Store.TrigramSkipCount == 1U);
     assert(Store.TrigramSkips[0].FileId == 0U);
+    assert(Store.ContentTrigramCount == 1U);
+    assert(Store.ContentTrigramPostingCount == 1U);
+    assert(Store.ContentTrigrams[0].Key == 0x616263U);
+    assert(Store.ContentTrigramDataSize == sizeof(PostingData));
+    assert(Store.ContentTrigramData[0] == 0U);
     CearchStoreClose(&Store);
 
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
