@@ -6,6 +6,9 @@
 #include <string.h>
 #include <strings.h>
 
+#define CearchQueryMaximumLength 4096U
+#define CearchQueryMaximumTokens 128U
+
 typedef enum {
     TokenEnd,
     TokenTerm,
@@ -21,6 +24,7 @@ typedef struct {
     const char *Cursor;
     CearchTokenType Type;
     char *Text;
+    size_t TokenCount;
 } CearchParser;
 
 static void FreeNode(CearchQueryNode *Node) {
@@ -65,6 +69,10 @@ static void NextToken(CearchParser *Parser) {
     while (*Parser->Cursor && isspace((unsigned char)*Parser->Cursor)) ++Parser->Cursor;
     if (!*Parser->Cursor) {
         Parser->Type = TokenEnd;
+        return;
+    }
+    if (++Parser->TokenCount > CearchQueryMaximumTokens) {
+        Parser->Type = TokenInvalid;
         return;
     }
     if (*Parser->Cursor == '(') {
@@ -187,8 +195,12 @@ bool CearchQueryParse(const char *Text, CearchQuery *Query) {
         errno = EINVAL;
         return false;
     }
-    *Query = (CearchQuery){0};
-    CearchParser Parser = { .Cursor = Text, .Type = TokenEnd, .Text = NULL };
+    if (strlen(Text) > CearchQueryMaximumLength) {
+        errno = E2BIG;
+        return false;
+    }
+    CearchQueryFree(Query);
+    CearchParser Parser = { .Cursor = Text, .Type = TokenEnd, .Text = NULL, .TokenCount = 0U };
     NextToken(&Parser);
     CearchQueryNode *Root = ParseOr(&Parser);
     bool Success = Root != NULL && Parser.Type == TokenEnd;
