@@ -98,16 +98,6 @@ static bool WriteResponse(int Client, uint16_t Status, uint32_t Count,
            (!PayloadLength || WriteExact(Client, Payload, PayloadLength));
 }
 
-static bool ContainsCaseInsensitive(const char *Haystack, const char *Needle) {
-    if (!Haystack || !Needle) return false;
-    if (!*Needle) return true;
-    size_t NeedleLength = strlen(Needle);
-    for (const char *Start = Haystack; *Start; ++Start) {
-        if (strncasecmp(Start, Needle, NeedleLength) == 0) return true;
-    }
-    return false;
-}
-
 static bool FileContains(const char *Path, const char *Query) {
     int Descriptor = open(Path, O_RDONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
     if (Descriptor < 0) return false;
