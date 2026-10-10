@@ -333,6 +333,7 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
         case CearchCommandSearch:
             Success = SearchName(Daemon, Query, Limit, (Request.Flags & 1U) != 0U,
                                  &Output, &OutputLength, &Found);
+            fprintf(stderr, "cearchd: name query \"%s\" returned %u hits (%zu bytes)\n", Query, Found, OutputLength);
             break;
         case CearchCommandContent:
             Success = SearchContent(Daemon, Query, Limit, &Output, &OutputLength, &Found);
