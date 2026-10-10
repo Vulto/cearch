@@ -66,6 +66,12 @@ static bool ReserveEntries(FileTable *Table, size_t Needed) {
     return true;
 }
 
+static void FreeTable(FileTable *Table) {
+    for (size_t Index = 0; Index < Table->Count; ++Index) free(Table->Entries[Index].Path);
+    free(Table->Entries);
+    *Table = (FileTable){0};
+}
+
 static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     if (RootCount <= 0) {
         fprintf(stderr, "cearch: index requires at least one ROOT\n");
