@@ -445,7 +445,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         }
         memcpy(Result + Length, Entry->Path, PathLength);
         Length += PathLength;
-        Result[Length++] = NullDelimited ? '\\0' : '\\n';
+        Result[Length++] = NullDelimited ? '\0' : '\n';
         ++Matches;
     }
 
