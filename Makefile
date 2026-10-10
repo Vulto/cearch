@@ -14,6 +14,9 @@ cearchd: src/daemon.c src/index.c src/store.c src/protocol.h src/index.h src/sto
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/daemon.c src/index.c src/store.c
 
 test: cearch cearchd
+	$(CC) $(CFLAGS) $(LDFLAGS) -o cearch-testquery src/testquery.c src/index.c
+	./cearch-testquery
+	rm -f cearch-testquery
 	sh tests/smoke.sh ./cearch && sh tests/daemon.sh ./cearchd
 
 install: cearch cearchd
@@ -23,4 +26,4 @@ install: cearch cearchd
 	install -Dm644 docs/ARCHITECTURE.md $(DESTDIR)/usr/local/share/doc/cearch/ARCHITECTURE.md
 
 clean:
-	rm -f cearch cearchd
+	rm -f cearch cearchd cearch-testquery
