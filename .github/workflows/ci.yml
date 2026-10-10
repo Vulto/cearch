@@ -26,6 +26,9 @@ jobs:
         run: make clean all CC=${{ matrix.compiler }} CFLAGS="-O2 -pipe -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -D_FILE_OFFSET_BITS=64"
       - name: Unit and integration tests
         run: make test CC=${{ matrix.compiler }} CFLAGS="-O2 -pipe -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -D_FILE_OFFSET_BITS=64"
+      - name: GCC static analysis
+        if: matrix.compiler == 'gcc'
+        run: make analyze CC=gcc CFLAGS="-O0 -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -D_FILE_OFFSET_BITS=64"
 
   sanitizer:
     name: AddressSanitizer and UndefinedBehaviorSanitizer
