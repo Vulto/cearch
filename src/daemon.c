@@ -46,6 +46,9 @@ typedef struct {
     time_t LastReconcile;
 } CearchDaemon;
 
+static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database);
+static void FreeDaemonIndex(CearchDaemon *Daemon);
+
 static volatile sig_atomic_t StopRequested = 0;
 
 static void HandleSignal(int Signal) {
