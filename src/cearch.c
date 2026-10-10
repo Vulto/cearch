@@ -114,9 +114,13 @@ static bool LoadDatabase(const char *Database, FileTable *Table, CearchStore *St
             .Path = (char *)Path,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
+            .MtimeNsec = Source->MtimeNsec,
+            .Ctime = Source->Ctime,
+            .CtimeNsec = Source->CtimeNsec,
             .Device = Source->Device,
             .Inode = Source->Inode,
-            .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o'
+            .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o',
+            .ContentIndexed = Source->Reserved[0] != 0U
         };
     }
     Table->OwnsPaths = false;
