@@ -1,27 +1,29 @@
 # Implementation status
 
-## Implemented and tested
+## Implemented and verified in the current repository
 
-- C23-compatible Linux CLI and foreground daemon.
-- Recursive non-symlink-following filesystem scan shared by initial indexing and reconciliation.
-- Versioned binary snapshot with atomic replacement and mmap validation.
-- Bounds, type, NUL-terminator, and embedded-NUL path validation.
-- Case-insensitive basename/full-path name queries using in-memory trigram postings with literal verification.
-- Fresh literal content scans of indexed regular files.
-- Unix-domain socket protocol with bounded requests/responses, owner-only socket permissions, stats, ping, and shutdown.
-- Optional recursive inotify watches, queue-overflow handling, event-triggered full scans, and periodic full reconciliation.
-- Unit tests for trigram candidates and snapshot round-trip/corrupt input, plus CLI and daemon integration tests.
-- GCC/Clang CI with warnings as errors and sanitizer coverage.
+- Linux-first C23-compatible CLI and foreground daemon/client.
+- Recursive filesystem indexing without following directory symlinks; scan failures prevent replacing the active snapshot.
+- Versioned, validated snapshot with atomic replacement, file sync, rename, and parent-directory sync.
+- Persisted trigram metadata, delta-coded posting IDs, skip checkpoints, and mapped posting lookup for filename/path searches.
+- Case-insensitive basename/full-path substring search with literal verification.
+- Fresh literal content scans of indexed regular files; content reads are not backed by a persistent content index.
+- Unix-domain socket protocol with bounded request/response sizes, owner-only socket permissions, search/content/stats/ping/shutdown commands.
+- Optional recursive inotify watches, event-triggered full scans, queue-overflow handling, and periodic reconciliation.
+- Unit tests for index postings and snapshot validation, plus CLI and daemon integration tests.
+- GCC and Clang CI builds with warnings as errors, GCC static analysis, and ASan/UBSan tests.
 
-## Still required for the target architecture
+## Remaining target work
 
-- Persistent on-disk trigram posting lists and direct mmap queries.
-- Delta-coded/compressed postings and compact parent/name records.
-- Persistent content candidate index.
-- Append-only update journal and snapshot compaction.
-- Query AST, boolean operators, metadata filters, exact/prefix/suffix modes, regex, fuzzy ranking.
-- Bounded parallel client processing and cancellation.
-- Benchmarks over representative datasets, protocol fuzzing, and filesystem race tests.
-- Optional service-manager units and install/runtime packaging polish.
+- Persistent content candidate index with current-content verification and update/recovery semantics.
+- Query AST and boolean operators, metadata filters, exact/prefix/suffix modes, regex, and fuzzy ranking.
+- Bounded parallel client processing, timeouts/cancellation, and load testing.
+- Append-only update journal and snapshot compaction; establish whether benchmarks justify this complexity.
+- Repeatable benchmark datasets and reports, protocol fuzzing, filesystem race tests, and broader failure-injection coverage.
+- Unambiguous output for arbitrary Linux filenames (for example, a NUL-delimited output mode).
+- Portable on-disk encoding is not a promise of the current native-layout snapshot.
+- Optional service-manager units and runtime packaging polish.
 
-CI passing validates only the checks it runs. Do not claim millisecond queries over millions of paths until reproducible benchmarks support the claim.
+## Acceptance gate
+
+Do not call the project complete until every target feature is either implemented and tested or explicitly removed from the agreed scope. Required checks are `make clean all`, `make test`, `make analyze`, and `make sanitize`; CI must enforce the compiler, test, analyzer, and sanitizer checks. Performance claims require recorded dataset shape, hardware, command, cache conditions, and repeatable measurements. Passing CI validates only the checks actually run.

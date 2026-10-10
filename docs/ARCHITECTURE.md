@@ -39,10 +39,12 @@ These query-language features are not implemented yet. A future parser must buil
 
 ## Next architecture stages
 
-1. Reduce startup and query costs further with measured benchmarks and profiling; avoid adding complexity without evidence.
-3. Introduce an append-only update journal and periodic snapshot compaction, while keeping full reconciliation as a correctness fallback.
-4. Add a persistent content candidate index, always verifying current contents before reporting hits.
-5. Add bounded multi-client concurrency, query cancellation, protocol fuzzing, and repeatable performance benchmarks.
+1. Establish repeatable benchmark baselines and profile indexing, name search, and content search before making performance claims.
+2. Add a validated query AST for boolean operators and metadata predicates; preserve the current substring query as the default behavior.
+3. Add a persistent content candidate index, always verifying current contents before reporting hits and defining how edits/deletions invalidate candidates.
+4. Add bounded multi-client concurrency, client deadlines/cancellation, protocol fuzzing, and load tests.
+5. Evaluate an append-only update journal and snapshot compaction against measured write/update costs; retain full reconciliation as the correctness fallback.
+6. Define a NUL-delimited output mode for filenames containing newline bytes and cover output/exit semantics with integration tests.
 
 ## Non-goals
 
