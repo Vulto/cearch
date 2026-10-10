@@ -44,7 +44,7 @@ These query-language features are not implemented yet. A future parser must buil
 3. Add a persistent content candidate index, always verifying current contents before reporting hits and defining how edits/deletions invalidate candidates.
 4. Add bounded multi-client concurrency, client deadlines/cancellation, protocol fuzzing, and load tests.
 5. Evaluate an append-only update journal and snapshot compaction against measured write/update costs; retain full reconciliation as the correctness fallback.
-6. Define a NUL-delimited output mode for filenames containing newline bytes and cover output/exit semantics with integration tests.
+6. Consider additional structured output formats if users need machine-readable metadata beyond NUL-delimited paths.
 
 ## Non-goals
 

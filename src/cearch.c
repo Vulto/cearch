@@ -33,8 +33,8 @@ static void PrintUsage(FILE *Stream) {
         "cearch - CLI file search (C23)\n"
         "Usage:\n"
         "  cearch index   --db DB ROOT [ROOT ...]\n"
-        "  cearch search  --db DB [--limit N] [--path] QUERY\n"
-        "  cearch content --db DB [--limit N] QUERY\n"
+        "  cearch search  --db DB [--limit N] [--path] [--null] QUERY\n"
+        "  cearch content --db DB [--limit N] [--null] QUERY\n"
         "  cearch stats   --db DB\n"
         "  cearch help\n");
 }
@@ -135,7 +135,9 @@ static const char *BaseName(const char *Path) {
     return Slash ? Slash + 1 : Path;
 }
 
-static bool SearchCommand(const char *Database, const char *Query, bool MatchPath, size_t Limit) {
+static bool PrintPath(const char *Path, bool NullDelimited);
+
+static bool SearchCommand(const char *Database, const char *Query, bool MatchPath, bool NullDelimited, size_t Limit) {
     FileTable Table = {0};
     CearchStore Store = { .Descriptor = -1 };
     if (!LoadDatabase(Database, &Table, &Store)) return false;
@@ -172,7 +174,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
-        if (puts(Entry->Path) == EOF) {
+        if (!PrintPath(Entry->Path, NullDelimited)) {
             CearchNameQueryFree(&Prepared);
             CearchFreeNameIndex(&Index);
             FreeTable(&Table);
@@ -187,6 +189,12 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     FreeTable(&Table);
     CearchStoreClose(&Store);
     return true;
+}
+
+static bool PrintPath(const char *Path, bool NullDelimited) {
+    size_t Length = strlen(Path);
+    if (fwrite(Path, 1U, Length, stdout) != Length) return false;
+    return fputc(NullDelimited ? '\0' : '\n', stdout) != EOF;
 }
 
 static bool IsBinaryBuffer(const unsigned char *Buffer, size_t Length) {
@@ -239,7 +247,7 @@ static bool FileContains(const char *Path, const char *Query) {
     return Match;
 }
 
-static bool ContentCommand(const char *Database, const char *Query, size_t Limit) {
+static bool ContentCommand(const char *Database, const char *Query, bool NullDelimited, size_t Limit) {
     FileTable Table = {0};
     CearchStore Store = { .Descriptor = -1 };
     if (!LoadDatabase(Database, &Table, &Store)) return false;
@@ -247,7 +255,7 @@ static bool ContentCommand(const char *Database, const char *Query, size_t Limit
     for (size_t Index = 0U; Index < Table.Count; ++Index) {
         const CearchFileEntry *Entry = &Table.Entries[Index];
         if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
-        if (puts(Entry->Path) == EOF) {
+        if (!PrintPath(Entry->Path, NullDelimited)) {
             FreeTable(&Table);
             CearchStoreClose(&Store);
             return false;
@@ -312,6 +320,7 @@ int main(int Argc, char **Argv) {
         const char *Database = nullptr;
         const char *Query = nullptr;
         bool MatchPath = false;
+        bool NullDelimited = false;
         size_t Limit = CearchDefaultLimit;
         for (int Index = 2; Index < Argc; ++Index) {
             if (strcmp(Argv[Index], "--db") == 0) {
@@ -322,6 +331,8 @@ int main(int Argc, char **Argv) {
                 Database = Argv[Index];
             } else if (strcmp(Argv[Index], "--path") == 0 && !Content) {
                 MatchPath = true;
+            } else if (strcmp(Argv[Index], "--null") == 0) {
+                NullDelimited = true;
             } else if (strcmp(Argv[Index], "--limit") == 0) {
                 if (++Index >= Argc || !ParseUnsigned(Argv[Index], &Limit) || Limit == 0) {
                     fprintf(stderr, "cearch: --limit requires a positive integer\n");
@@ -338,8 +349,8 @@ int main(int Argc, char **Argv) {
             PrintUsage(stderr);
             return 2;
         }
-        bool Success = Content ? ContentCommand(Database, Query, Limit)
-                               : SearchCommand(Database, Query, MatchPath, Limit);
+        bool Success = Content ? ContentCommand(Database, Query, NullDelimited, Limit)
+                               : SearchCommand(Database, Query, MatchPath, NullDelimited, Limit);
         return Success ? 0 : 1;
     }
     if (strcmp(Argv[1], "stats") == 0) {
