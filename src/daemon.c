@@ -402,7 +402,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         const char *Base = strrchr(Entry->Path, '/');
         Base = Base ? Base + 1 : Entry->Path;
         const char *Haystack = MatchPath ? Entry->Path : Base;
-        if (!CearchQueryMatches(&ParsedQuery, Haystack)) continue;
+        if (!CearchQueryMatchesEntry(&ParsedQuery, Entry, Haystack)) continue;
 
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
