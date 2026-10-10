@@ -338,7 +338,8 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
     Daemon->NameIndex.Entries = Entries;
     Daemon->NameIndex.Count = Store.EntryCount;
     if (!CearchAttachNameIndex(&Daemon->NameIndex, Store.Trigrams, Store.TrigramCount,
-                               Store.TrigramFileIds, Store.TrigramPostingCount)) {
+                               nullptr, Store.TrigramPostingCount, Store.TrigramData,
+                               Store.TrigramDataSize, Store.TrigramSkips, Store.TrigramSkipCount)) {
         free(Daemon->Entries);
         Daemon->Entries = nullptr;
         Daemon->EntryCount = 0U;
