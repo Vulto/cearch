@@ -149,9 +149,10 @@ static bool QueryTrigramKeys(const char *Query, uint32_t **Keys, size_t *Count) 
 
 static bool HasAllQueryTrigrams(const CearchIndex *Index, uint32_t FileId,
                                 const uint32_t *Keys, size_t KeyCount) {
+    (void)fprintf(stderr, "index-debug: file=%u keys=%zu postings=%zu trigrams=%zu\\n", FileId, KeyCount, Index->TrigramPostingCount, Index->TrigramCount);
     for (size_t KeyIndex = 0; KeyIndex < KeyCount; ++KeyIndex) {
         const CearchTrigramPosting *Posting = FindPosting(Index, Keys[KeyIndex]);
-        if (!Posting) return false;
+        if (!Posting) { (void)fprintf(stderr, "index-debug: missing key=%u\\n", Keys[KeyIndex]); return false; }
         bool Found = false;
         size_t Low = Posting->Start, High = Posting->Start + Posting->Count;
         while (Low < High) {
@@ -161,7 +162,7 @@ static bool HasAllQueryTrigrams(const CearchIndex *Index, uint32_t FileId,
             else High = Mid;
         }
         Found = Low < Posting->Start + Posting->Count && Index->TrigramFileIds[Low] == FileId;
-        if (!Found) return false;
+        if (!Found) { (void)fprintf(stderr, "index-debug: absent file=%u key=%u\\n", FileId, Keys[KeyIndex]); return false; }
     }
     return true;
 }
