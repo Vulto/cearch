@@ -4,6 +4,7 @@
 #include "index.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <regex.h>
 #include <stdint.h>
 
@@ -23,6 +24,7 @@ typedef enum {
     CearchQueryFilterPath,
     CearchQueryFilterIn,
     CearchQueryRegex,
+    CearchQueryFuzzy,
     CearchQueryNot,
     CearchQueryAnd,
     CearchQueryOr
@@ -51,6 +53,11 @@ typedef struct CearchQueryNode {
 typedef struct {
     CearchQueryNode *Root;
 } CearchQuery;
+
+typedef struct {
+    const char *Path;
+    uint32_t Score;
+} CearchQueryHit;
 
 /* Grammar: terms, quoted phrases, exact:/prefix:/suffix:, NOT, AND, OR, and parentheses. Query must be zero-initialized or previously parsed. */
 bool CearchQueryParse(const char *Text, CearchQuery *Query);
