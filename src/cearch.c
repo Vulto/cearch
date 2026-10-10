@@ -185,7 +185,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
         if (EntryIndex >= Table.Count) continue;
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
-        if (!CearchQueryMatches(&ParsedQuery, Haystack)) continue;
+        if (!CearchQueryMatchesEntry(&ParsedQuery, Entry, Haystack)) continue;
         if (!PrintPath(Entry->Path, NullDelimited)) {
             CearchQueryFree(&ParsedQuery);
             CearchNameQueryFree(&Prepared);
