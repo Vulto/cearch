@@ -83,10 +83,12 @@ static bool WriteResponse(int Client, uint16_t Status, uint32_t Count,
 }
 
 static bool ContainsCaseInsensitive(const char *Haystack, const char *Needle) {
+    if (!Haystack || !Needle) return false;
     if (!*Needle) return true;
     size_t NeedleLength = strlen(Needle);
-    for (const char *Start = Haystack; *Start; ++Start)
+    for (const char *Start = Haystack; *Start; ++Start) {
         if (strncasecmp(Start, Needle, NeedleLength) == 0) return true;
+    }
     return false;
 }
 
