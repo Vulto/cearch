@@ -35,13 +35,13 @@ typedef struct {
 
 static void PrintUsage(FILE *Stream) {
     fprintf(Stream,
-        "cearch - CLI file search (C23)\\n"
-        "Usage:\\n"
-        "  cearch index   --db DB ROOT [ROOT ...]\\n"
-        "  cearch search  --db DB [--limit N] [--path] QUERY\\n"
-        "  cearch content --db DB [--limit N] QUERY\\n"
-        "  cearch stats   --db DB\\n"
-        "  cearch help\\n");
+        "cearch - CLI file search (C23)\n"
+        "Usage:\n"
+        "  cearch index   --db DB ROOT [ROOT ...]\n"
+        "  cearch search  --db DB [--limit N] [--path] QUERY\n"
+        "  cearch content --db DB [--limit N] QUERY\n"
+        "  cearch stats   --db DB\n"
+        "  cearch help\n");
 }
 
 static bool ParseUnsigned(const char *Text, size_t *Value) {
@@ -114,18 +114,18 @@ static bool IsDotEntry(const char *Name) {
 static bool WalkPath(FileTable *Table, const char *Path) {
     struct stat Status;
     if (lstat(Path, &Status) != 0) {
-        fprintf(stderr, "cearch: cannot stat %s: %s\\n", Path, strerror(errno));
+        fprintf(stderr, "cearch: cannot stat %s: %s\n", Path, strerror(errno));
         return true;
     }
     if (!AddEntry(Table, Path, &Status)) {
-        fprintf(stderr, "cearch: out of memory indexing %s\\n", Path);
+        fprintf(stderr, "cearch: out of memory indexing %s\n", Path);
         return false;
     }
     if (!S_ISDIR(Status.st_mode)) return true;
 
     DIR *Directory = opendir(Path);
     if (!Directory) {
-        fprintf(stderr, "cearch: cannot read directory %s: %s\\n", Path, strerror(errno));
+        fprintf(stderr, "cearch: cannot read directory %s: %s\n", Path, strerror(errno));
         return true;
     }
 
@@ -136,7 +136,7 @@ static bool WalkPath(FileTable *Table, const char *Path) {
         char *Child = JoinPath(Path, Item->d_name);
         if (!Child) {
             closedir(Directory);
-            fprintf(stderr, "cearch: out of memory building path\\n");
+            fprintf(stderr, "cearch: out of memory building path\n");
             return false;
         }
         bool Success = WalkPath(Table, Child);
@@ -148,32 +148,32 @@ static bool WalkPath(FileTable *Table, const char *Path) {
         errno = 0;
     }
     if (errno != 0)
-        fprintf(stderr, "cearch: error reading directory %s: %s\\n", Path, strerror(errno));
+        fprintf(stderr, "cearch: error reading directory %s: %s\n", Path, strerror(errno));
     closedir(Directory);
     return true;
 }
 
 static bool WriteEntry(FILE *Stream, const FileEntry *Entry) {
     /* Paths containing newline or tab are escaped; backslash is escaped too. */
-    if (fprintf(Stream, "E\\t%c\\t%" PRIu64 "\\t%" PRId64 "\\t%" PRIu64 "\\t%" PRIu64 "\\t",
+    if (fprintf(Stream, "E\t%c\t%" PRIu64 "\t%" PRId64 "\t%" PRIu64 "\t%" PRIu64 "\t",
                 Entry->Type, Entry->Size, Entry->Mtime, Entry->Device, Entry->Inode) < 0) return false;
     for (const unsigned char *Cursor = (const unsigned char *)Entry->Path; *Cursor; ++Cursor) {
-        if (*Cursor == '\\\\') {
-            if (fputs("\\\\\\\\", Stream) == EOF) return false;
-        } else if (*Cursor == '\\t') {
-            if (fputs("\\\\t", Stream) == EOF) return false;
-        } else if (*Cursor == '\\n') {
-            if (fputs("\\\\n", Stream) == EOF) return false;
-        } else if (*Cursor == '\\r') {
-            if (fputs("\\\\r", Stream) == EOF) return false;
+        if (*Cursor == '\\') {
+            if (fputs("\\\\", Stream) == EOF) return false;
+        } else if (*Cursor == '\t') {
+            if (fputs("\\\t", Stream) == EOF) return false;
+        } else if (*Cursor == '\n') {
+            if (fputs("\\\n", Stream) == EOF) return false;
+        } else if (*Cursor == '\r') {
+            if (fputs("\\\r", Stream) == EOF) return false;
         } else if (fputc(*Cursor, Stream) == EOF) return false;
     }
-    return fputc('\\n', Stream) != EOF;
+    return fputc('\n', Stream) != EOF;
 }
 
 static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     if (RootCount <= 0) {
-        fprintf(stderr, "cearch: index requires at least one ROOT\\n");
+        fprintf(stderr, "cearch: index requires at least one ROOT\n");
         return false;
     }
     FileTable Table = {0};
@@ -193,13 +193,13 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     snprintf(Temporary, TempLength, "%s.tmp.%ld", Database, (long)getpid());
     FILE *Stream = fopen(Temporary, "wx");
     if (!Stream) {
-        fprintf(stderr, "cearch: cannot create %s: %s\\n", Temporary, strerror(errno));
+        fprintf(stderr, "cearch: cannot create %s: %s\n", Temporary, strerror(errno));
         free(Temporary);
         FreeTable(&Table);
         return false;
     }
 
-    bool Success = fprintf(Stream, "CEARCH\\t%u\\n", CearchVersion) >= 0;
+    bool Success = fprintf(Stream, "CEARCH\t%u\n", CearchVersion) >= 0;
     for (size_t Index = 0; Success && Index < Table.Count; ++Index)
         Success = WriteEntry(Stream, &Table.Entries[Index]);
     if (Success && fflush(Stream) != 0) Success = false;
@@ -207,10 +207,10 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     if (fclose(Stream) != 0) Success = false;
     if (Success && rename(Temporary, Database) != 0) Success = false;
     if (!Success) {
-        fprintf(stderr, "cearch: failed writing database %s: %s\\n", Database, strerror(errno));
+        fprintf(stderr, "cearch: failed writing database %s: %s\n", Database, strerror(errno));
         unlink(Temporary);
     } else {
-        fprintf(stderr, "cearch: indexed %zu entries into %s\\n", Table.Count, Database);
+        fprintf(stderr, "cearch: indexed %zu entries into %s\n", Table.Count, Database);
     }
 
     free(Temporary);
@@ -224,43 +224,43 @@ static char *DecodePath(const char *Text) {
     if (!Path) return nullptr;
     size_t Out = 0;
     for (size_t Index = 0; Index < Length; ++Index) {
-        if (Text[Index] == '\\\\' && Index + 1U < Length) {
+        if (Text[Index] == '\\' && Index + 1U < Length) {
             ++Index;
-            if (Text[Index] == 't') Path[Out++] = '\\t';
-            else if (Text[Index] == 'n') Path[Out++] = '\\n';
-            else if (Text[Index] == 'r') Path[Out++] = '\\r';
-            else if (Text[Index] == '\\\\') Path[Out++] = '\\\\';
+            if (Text[Index] == 't') Path[Out++] = '\t';
+            else if (Text[Index] == 'n') Path[Out++] = '\n';
+            else if (Text[Index] == 'r') Path[Out++] = '\r';
+            else if (Text[Index] == '\\') Path[Out++] = '\\';
             else {
-                Path[Out++] = '\\\\';
+                Path[Out++] = '\\';
                 Path[Out++] = Text[Index];
             }
         } else {
             Path[Out++] = Text[Index];
         }
     }
-    Path[Out] = '\\0';
+    Path[Out] = '\0';
     return Path;
 }
 
 static bool LoadDatabase(const char *Database, FileTable *Table) {
     FILE *Stream = fopen(Database, "r");
     if (!Stream) {
-        fprintf(stderr, "cearch: cannot open database %s: %s\\n", Database, strerror(errno));
+        fprintf(stderr, "cearch: cannot open database %s: %s\n", Database, strerror(errno));
         return false;
     }
     char *Line = nullptr;
     size_t LineCapacity = 0;
     ssize_t LineLength = getline(&Line, &LineCapacity, Stream);
     if (LineLength < 0) {
-        fprintf(stderr, "cearch: empty database %s\\n", Database);
+        fprintf(stderr, "cearch: empty database %s\n", Database);
         free(Line);
         fclose(Stream);
         return false;
     }
     unsigned Version = 0;
     char Extra = 0;
-    if (sscanf(Line, "CEARCH\\t%u%c", &Version, &Extra) < 1 || Version != CearchVersion) {
-        fprintf(stderr, "cearch: unsupported database format\\n");
+    if (sscanf(Line, "CEARCH\t%u%c", &Version, &Extra) < 1 || Version != CearchVersion) {
+        fprintf(stderr, "cearch: unsupported database format\n");
         free(Line);
         fclose(Stream);
         return false;
@@ -269,27 +269,27 @@ static bool LoadDatabase(const char *Database, FileTable *Table) {
     bool Success = true;
     while ((LineLength = getline(&Line, &LineCapacity, Stream)) >= 0) {
         if ((size_t)LineLength > CearchMaxLine) {
-            fprintf(stderr, "cearch: database record exceeds limit\\n");
+            fprintf(stderr, "cearch: database record exceeds limit\n");
             Success = false;
             break;
         }
-        if (LineLength && Line[LineLength - 1] == '\\n') Line[--LineLength] = '\\0';
+        if (LineLength && Line[LineLength - 1] == '\n') Line[--LineLength] = '\0';
         char *Fields[6] = {0};
         char *Cursor = Line;
         for (size_t Field = 0; Field < 6U; ++Field) {
             Fields[Field] = Cursor;
-            char *Tab = strchr(Cursor, '\\t');
+            char *Tab = strchr(Cursor, '\t');
             if (Field < 5U) {
                 if (!Tab) {
                     Success = false;
                     break;
                 }
-                *Tab = '\\0';
+                *Tab = '\0';
                 Cursor = Tab + 1;
             }
         }
         if (!Success || strcmp(Fields[0], "E") != 0 || !Fields[1][0]) {
-            fprintf(stderr, "cearch: malformed database record\\n");
+            fprintf(stderr, "cearch: malformed database record\n");
             Success = false;
             break;
         }
@@ -323,7 +323,7 @@ static bool LoadDatabase(const char *Database, FileTable *Table) {
     free(Line);
     fclose(Stream);
     if (!Success) {
-        fprintf(stderr, "cearch: invalid or unreadable database %s\\n", Database);
+        fprintf(stderr, "cearch: invalid or unreadable database %s\n", Database);
         FreeTable(Table);
     }
     return Success;
@@ -358,7 +358,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
 }
 
 static bool IsBinaryBuffer(const unsigned char *Buffer, size_t Length) {
-    return memchr(Buffer, '\\0', Length) != nullptr;
+    return memchr(Buffer, '\0', Length) != nullptr;
 }
 
 static bool FileContains(const char *Path, const char *Query) {
@@ -435,7 +435,7 @@ static bool StatsCommand(const char *Database) {
         else if (Table.Entries[Index].Type == 'd') ++Directories;
         else ++Other;
     }
-    printf("entries: %zu\\nfiles: %zu\\ndirectories: %zu\\nother: %zu\\n",
+    printf("entries: %zu\nfiles: %zu\ndirectories: %zu\nother: %zu\n",
            Table.Count, Files, Directories, Other);
     FreeTable(&Table);
     return true;
@@ -491,12 +491,12 @@ int main(int Argc, char **Argv) {
                 MatchPath = true;
             } else if (strcmp(Argv[Index], "--limit") == 0) {
                 if (++Index >= Argc || !ParseUnsigned(Argv[Index], &Limit) || Limit == 0) {
-                    fprintf(stderr, "cearch: --limit requires a positive integer\\n");
+                    fprintf(stderr, "cearch: --limit requires a positive integer\n");
                     return 2;
                 }
             } else if (!Query) Query = Argv[Index];
             else {
-                fprintf(stderr, "cearch: only one QUERY argument is supported; quote it if it contains spaces\\n");
+                fprintf(stderr, "cearch: only one QUERY argument is supported; quote it if it contains spaces\n");
                 return 2;
             }
         }
