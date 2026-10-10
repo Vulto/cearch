@@ -2,6 +2,7 @@
 #include "protocol.h"
 #include "store.h"
 #include "index.h"
+#include "query.h"
 #include "indexer.h"
 #include <dirent.h>
 #include <poll.h>
@@ -378,27 +379,44 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
 
     size_t Length = 0U;
     uint32_t Matches = 0U;
+    CearchQuery ParsedQuery = {0};
+    if (!CearchQueryParse(Query, &ParsedQuery)) {
+        free(Result);
+        return false;
+    }
+    const char *SimpleTerm = CearchQuerySimpleTerm(&ParsedQuery);
     CearchNameQuery Prepared = {0};
     CearchNameCandidateIterator Iterator = {0};
-    if (!CearchNameQueryPrepare(Query, &Prepared) ||
-        !CearchNameCandidatesBegin(&Daemon->NameIndex, &Prepared, &Iterator)) {
+    if (SimpleTerm &&
+        (!CearchNameQueryPrepare(SimpleTerm, &Prepared) ||
+         !CearchNameCandidatesBegin(&Daemon->NameIndex, &Prepared, &Iterator))) {
+        CearchQueryFree(&ParsedQuery);
         CearchNameQueryFree(&Prepared);
         free(Result);
         return false;
     }
 
+    size_t ScanIndex = 0U;
     uint32_t FileId = 0U;
-    while (Matches < Limit && CearchNameCandidatesNext(&Iterator, &FileId)) {
-        size_t EntryIndex = (size_t)FileId;
+    while (Matches < Limit) {
+        size_t EntryIndex;
+        if (SimpleTerm) {
+            if (!CearchNameCandidatesNext(&Iterator, &FileId)) break;
+            EntryIndex = (size_t)FileId;
+        } else {
+            if (ScanIndex >= Daemon->EntryCount) break;
+            EntryIndex = ScanIndex++;
+        }
         if (EntryIndex >= Daemon->EntryCount) continue;
         const CearchFileEntry *Entry = &Daemon->Entries[EntryIndex];
         const char *Base = strrchr(Entry->Path, '/');
         Base = Base ? Base + 1 : Entry->Path;
         const char *Haystack = MatchPath ? Entry->Path : Base;
-        if (!ContainsCaseInsensitive(Haystack, Query)) continue;
+        if (!CearchQueryMatches(&ParsedQuery, Haystack)) continue;
 
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
+            CearchQueryFree(&ParsedQuery);
             CearchNameQueryFree(&Prepared);
             free(Result);
             return false;
@@ -408,6 +426,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
             size_t Next = Capacity;
             while (Next < Needed) {
                 if (Next > SIZE_MAX / 2U) {
+                    CearchQueryFree(&ParsedQuery);
                     CearchNameQueryFree(&Prepared);
                     free(Result);
                     return false;
@@ -416,6 +435,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
             }
             char *NewResult = realloc(Result, Next);
             if (!NewResult) {
+                CearchQueryFree(&ParsedQuery);
                 CearchNameQueryFree(&Prepared);
                 free(Result);
                 return false;
@@ -425,10 +445,11 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         }
         memcpy(Result + Length, Entry->Path, PathLength);
         Length += PathLength;
-        Result[Length++] = NullDelimited ? '\0' : '\n';
+        Result[Length++] = NullDelimited ? '\\0' : '\\n';
         ++Matches;
     }
 
+    CearchQueryFree(&ParsedQuery);
     CearchNameQueryFree(&Prepared);
     *Output = Result;
     *OutputLength = Length;
