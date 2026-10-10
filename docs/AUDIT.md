@@ -51,7 +51,7 @@ Default output is newline-delimited. The --null option provides an unambiguous m
 
 ### P2 — Worker saturation and cancellation need deeper testing
 
-The daemon caps active workers at 64 and sets 10-second socket I/O timeouts. Concurrent requests and partial-request isolation are covered by integration tests. Sustained saturation, slow readers, shutdown under load, and cancellation of expensive search work still need stress testing. A worker holding a state read lock during request handling can delay snapshot reconciliation until that request finishes or times out.
+The daemon caps active workers at 64 and sets 10-second socket I/O timeouts. Concurrent requests and partial-request isolation are covered by integration tests. Sustained saturation, slow readers, shutdown under load, and cancellation of expensive search work still need stress testing. The state read lock is acquired only after the full request payload is received, so a partial request does not block reconciliation; long-running searches can still delay a snapshot swap.
 
 ### P2 — Performance evidence is still incomplete
 
