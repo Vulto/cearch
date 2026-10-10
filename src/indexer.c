@@ -322,9 +322,12 @@ static bool WriteSnapshot(const char *Database, CearchScanTable *Table) {
     size_t ContentPostingCount = 0U;
     char **ContentBuffers = nullptr;
     CearchIndex ContentIndex = {0};
-    if (Success) Success = BuildContentIndex((CearchScanTable *)Table, IndexEntries,
-                                             &ContentBuffers, &ContentIndex);
+    if (Success) Success = BuildContentIndex(Table, IndexEntries, &ContentBuffers, &ContentIndex);
     if (Success) {
+        for (size_t Index = 0U; Index < Table->Count; ++Index) {
+            Entries[Index].Reserved[0] = Table->Entries[Index].ContentIndexed ? 1U : 0U;
+            IndexEntries[Index].ContentIndexed = Table->Entries[Index].ContentIndexed;
+        }
         Success = CearchEncodeNameIndex(&ContentIndex, &ContentTrigrams, &ContentPostingData,
                                         &ContentPostingDataSize, &ContentSkips, &ContentSkipCount);
         ContentPostingCount = ContentIndex.TrigramPostingCount;
@@ -338,7 +341,7 @@ static bool WriteSnapshot(const char *Database, CearchScanTable *Table) {
                                    ContentPostingData, ContentPostingDataSize,
                                    ContentSkips, ContentSkipCount, ContentPostingCount);
     }
-    if (ContentIndex.Entries) {
+    if (ContentIndex.OwnsNameIndex) {
         CearchFreeNameIndex(&ContentIndex);
         for (size_t Index = 0U; Index < Table->Count; ++Index)
             IndexEntries[Index].Path = Table->Entries[Index].Path;
