@@ -30,6 +30,13 @@ typedef struct {
     uint64_t SkipOffset;
     uint64_t SkipCount;
     uint64_t FileIdCount;
+    uint64_t ContentTrigramOffset;
+    uint64_t ContentTrigramCount;
+    uint64_t ContentPostingDataOffset;
+    uint64_t ContentPostingDataSize;
+    uint64_t ContentSkipOffset;
+    uint64_t ContentSkipCount;
+    uint64_t ContentFileIdCount;
     uint64_t FileSize;
 } CearchDiskHeader;
 
@@ -111,10 +118,17 @@ bool CearchStoreWrite(const char *Database,
                       const CearchTrigramPosting *Trigrams, size_t TrigramCount,
                       const unsigned char *PostingData, size_t PostingDataSize,
                       const CearchPostingSkip *Skips, size_t SkipCount,
-                      size_t TrigramPostingCount) {
+                      size_t TrigramPostingCount,
+                      const CearchTrigramPosting *ContentTrigrams, size_t ContentTrigramCount,
+                      const unsigned char *ContentPostingData, size_t ContentPostingDataSize,
+                      const CearchPostingSkip *ContentSkips, size_t ContentSkipCount,
+                      size_t ContentPostingCount) {
     if (!Database || !*Database || (EntryCount && !Entries) ||
         (StringsSize && !Strings) || (TrigramCount && !Trigrams) ||
-        (PostingDataSize && !PostingData) || (SkipCount && !Skips)) {
+        (PostingDataSize && !PostingData) || (SkipCount && !Skips) ||
+        (ContentTrigramCount && !ContentTrigrams) ||
+        (ContentPostingDataSize && !ContentPostingData) ||
+        (ContentSkipCount && !ContentSkips)) {
         errno = EINVAL;
         return false;
     }
@@ -122,6 +136,8 @@ bool CearchStoreWrite(const char *Database,
     size_t EntryBytes = 0U;
     size_t TrigramBytes = 0U;
     size_t SkipBytes = 0U;
+    size_t ContentTrigramBytes = 0U;
+    size_t ContentSkipBytes = 0U;
     size_t EntryOffset = sizeof(CearchDiskHeader);
     size_t StringOffset = 0U;
     size_t StringEnd = 0U;
@@ -129,6 +145,11 @@ bool CearchStoreWrite(const char *Database,
     size_t PostingDataOffset = 0U;
     size_t PostingDataEnd = 0U;
     size_t SkipOffset = 0U;
+    size_t SkipEnd = 0U;
+    size_t ContentTrigramOffset = 0U;
+    size_t ContentPostingDataOffset = 0U;
+    size_t ContentPostingDataEnd = 0U;
+    size_t ContentSkipOffset = 0U;
     size_t FileSize = 0U;
     if (MultiplyOverflowSize(EntryCount, sizeof(CearchDiskEntry), &EntryBytes) ||
         AddOverflowSize(EntryOffset, EntryBytes, &StringOffset) ||
@@ -139,7 +160,14 @@ bool CearchStoreWrite(const char *Database,
         AddOverflowSize(PostingDataOffset, PostingDataSize, &PostingDataEnd) ||
         AlignSize(PostingDataEnd, alignof(CearchPostingSkip), &SkipOffset) ||
         MultiplyOverflowSize(SkipCount, sizeof(CearchPostingSkip), &SkipBytes) ||
-        AddOverflowSize(SkipOffset, SkipBytes, &FileSize)) {
+        AddOverflowSize(SkipOffset, SkipBytes, &SkipEnd) ||
+        AlignSize(SkipEnd, alignof(CearchTrigramPosting), &ContentTrigramOffset) ||
+        MultiplyOverflowSize(ContentTrigramCount, sizeof(CearchTrigramPosting), &ContentTrigramBytes) ||
+        AddOverflowSize(ContentTrigramOffset, ContentTrigramBytes, &ContentPostingDataOffset) ||
+        AddOverflowSize(ContentPostingDataOffset, ContentPostingDataSize, &ContentPostingDataEnd) ||
+        AlignSize(ContentPostingDataEnd, alignof(CearchPostingSkip), &ContentSkipOffset) ||
+        MultiplyOverflowSize(ContentSkipCount, sizeof(CearchPostingSkip), &ContentSkipBytes) ||
+        AddOverflowSize(ContentSkipOffset, ContentSkipBytes, &FileSize)) {
         errno = EOVERFLOW;
         return false;
     }
@@ -175,6 +203,13 @@ bool CearchStoreWrite(const char *Database,
         .SkipOffset = SkipOffset,
         .SkipCount = SkipCount,
         .FileIdCount = TrigramPostingCount,
+        .ContentTrigramOffset = ContentTrigramOffset,
+        .ContentTrigramCount = ContentTrigramCount,
+        .ContentPostingDataOffset = ContentPostingDataOffset,
+        .ContentPostingDataSize = ContentPostingDataSize,
+        .ContentSkipOffset = ContentSkipOffset,
+        .ContentSkipCount = ContentSkipCount,
+        .ContentFileIdCount = ContentPostingCount,
         .FileSize = FileSize
     };
 
@@ -196,11 +231,16 @@ bool CearchStoreWrite(const char *Database,
         (const unsigned char *)Strings,
         (const unsigned char *)Trigrams,
         PostingData,
-        (const unsigned char *)Skips
+        (const unsigned char *)Skips,
+        (const unsigned char *)ContentTrigrams,
+        ContentPostingData,
+        (const unsigned char *)ContentSkips
     };
-    size_t Sizes[] = { EntryBytes, StringsSize, TrigramBytes, PostingDataSize, SkipBytes };
+    size_t Sizes[] = { EntryBytes, StringsSize, TrigramBytes, PostingDataSize, SkipBytes,
+                       ContentTrigramBytes, ContentPostingDataSize, ContentSkipBytes };
     size_t Cursor = sizeof(Header);
-    size_t Starts[] = { EntryOffset, StringOffset, TrigramOffset, PostingDataOffset, SkipOffset };
+    size_t Starts[] = { EntryOffset, StringOffset, TrigramOffset, PostingDataOffset, SkipOffset,
+                        ContentTrigramOffset, ContentPostingDataOffset, ContentSkipOffset };
     for (size_t Block = 0U; Block < sizeof(Sizes) / sizeof(Sizes[0]) && Success; ++Block) {
         if (Cursor > Starts[Block]) {
             Success = false;
@@ -263,6 +303,56 @@ static bool ReadUleb128(const unsigned char *Data, size_t DataSize,
     return false;
 }
 
+static bool ValidateTrigramSection(const CearchTrigramPosting *Trigrams, size_t TrigramCount,
+                                    const unsigned char *PostingData, size_t PostingDataSize,
+                                    const CearchPostingSkip *Skips, size_t SkipCount,
+                                    uint64_t FileIdCount, uint64_t EntryCount) {
+    uint64_t ExpectedDataStart = 0U;
+    uint64_t ExpectedSkipStart = 0U;
+    uint64_t TotalFileIds = 0U;
+    for (size_t PostingIndex = 0U; PostingIndex < TrigramCount; ++PostingIndex) {
+        const CearchTrigramPosting *Posting = &Trigrams[PostingIndex];
+        uint64_t ExpectedLocalSkips = Posting->Count / CearchPostingSkipStride +
+                                      (Posting->Count % CearchPostingSkipStride != 0U);
+        if (Posting->Reserved != 0U || Posting->Key > 0xFFFFFFU ||
+            Posting->Count == 0U || Posting->Start != ExpectedDataStart ||
+            Posting->Start > PostingDataSize ||
+            Posting->SkipStart != ExpectedSkipStart ||
+            Posting->SkipCount != ExpectedLocalSkips ||
+            Posting->SkipStart > SkipCount ||
+            Posting->SkipCount > SkipCount - Posting->SkipStart ||
+            (PostingIndex && Trigrams[PostingIndex - 1U].Key >= Posting->Key) ||
+            TotalFileIds > FileIdCount || Posting->Count > FileIdCount - TotalFileIds) return false;
+
+        size_t Offset = (size_t)Posting->Start;
+        uint32_t CurrentId = 0U;
+        for (uint64_t Ordinal = 0U; Ordinal < Posting->Count; ++Ordinal) {
+            uint32_t Delta = 0U;
+            if (!ReadUleb128(PostingData, PostingDataSize, &Offset, &Delta)) return false;
+            if (Ordinal == 0U) CurrentId = Delta;
+            else {
+                if (Delta == 0U || CurrentId > UINT32_MAX - Delta) return false;
+                CurrentId += Delta;
+            }
+            if (CurrentId >= EntryCount) return false;
+            if (Ordinal % CearchPostingSkipStride == 0U) {
+                size_t SkipIndex = (size_t)(Posting->SkipStart + Ordinal / CearchPostingSkipStride);
+                if (SkipIndex >= SkipCount || PostingIndex > UINT32_MAX || Ordinal > UINT32_MAX)
+                    return false;
+                const CearchPostingSkip *Skip = &Skips[SkipIndex];
+                if (Skip->PostingIndex != (uint32_t)PostingIndex ||
+                    Skip->Ordinal != (uint32_t)Ordinal || Skip->ByteOffset != Offset ||
+                    Skip->FileId != CurrentId || Skip->Reserved != 0U) return false;
+            }
+        }
+        ExpectedDataStart = Offset;
+        ExpectedSkipStart += Posting->SkipCount;
+        TotalFileIds += Posting->Count;
+    }
+    return ExpectedDataStart == PostingDataSize &&
+           ExpectedSkipStart == SkipCount && TotalFileIds == FileIdCount;
+}
+
 static bool PaddingIsZero(const unsigned char *Bytes, size_t Start, size_t End) {
     if (End < Start) return false;
     for (size_t Offset = Start; Offset < End; ++Offset)
@@ -301,12 +391,19 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
     size_t EntryBytes = 0U;
     size_t TrigramBytes = 0U;
     size_t SkipBytes = 0U;
+    size_t ContentTrigramBytes = 0U;
+    size_t ContentSkipBytes = 0U;
     size_t ExpectedStringOffset = 0U;
     size_t StringEnd = 0U;
     size_t ExpectedTrigramOffset = 0U;
     size_t ExpectedPostingDataOffset = 0U;
     size_t PostingDataEnd = 0U;
     size_t ExpectedSkipOffset = 0U;
+    size_t SkipEnd = 0U;
+    size_t ExpectedContentTrigramOffset = 0U;
+    size_t ExpectedContentPostingDataOffset = 0U;
+    size_t ContentPostingDataEnd = 0U;
+    size_t ExpectedContentSkipOffset = 0U;
     size_t ExpectedFileSize = 0U;
     bool Valid = Header->Magic == CearchStoreMagic &&
                  Header->Version == CearchStoreVersion &&
@@ -317,6 +414,10 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
                  Header->PostingDataSize <= SIZE_MAX &&
                  Header->SkipCount <= SIZE_MAX &&
                  Header->FileIdCount <= SIZE_MAX &&
+                 Header->ContentTrigramCount <= SIZE_MAX &&
+                 Header->ContentPostingDataSize <= SIZE_MAX &&
+                 Header->ContentSkipCount <= SIZE_MAX &&
+                 Header->ContentFileIdCount <= SIZE_MAX &&
                  !MultiplyOverflowSize((size_t)Header->EntryCount, sizeof(CearchDiskEntry), &EntryBytes) &&
                  !AddOverflowSize(sizeof(CearchDiskHeader), EntryBytes, &ExpectedStringOffset) &&
                  !AddOverflowSize(ExpectedStringOffset, (size_t)Header->StringSize, &StringEnd) &&
@@ -326,12 +427,22 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
                  !AddOverflowSize(ExpectedPostingDataOffset, (size_t)Header->PostingDataSize, &PostingDataEnd) &&
                  !AlignSize(PostingDataEnd, alignof(CearchPostingSkip), &ExpectedSkipOffset) &&
                  !MultiplyOverflowSize((size_t)Header->SkipCount, sizeof(CearchPostingSkip), &SkipBytes) &&
-                 !AddOverflowSize(ExpectedSkipOffset, SkipBytes, &ExpectedFileSize) &&
+                 !AddOverflowSize(ExpectedSkipOffset, SkipBytes, &SkipEnd) &&
+                 !AlignSize(SkipEnd, alignof(CearchTrigramPosting), &ExpectedContentTrigramOffset) &&
+                 !MultiplyOverflowSize((size_t)Header->ContentTrigramCount, sizeof(CearchTrigramPosting), &ContentTrigramBytes) &&
+                 !AddOverflowSize(ExpectedContentTrigramOffset, ContentTrigramBytes, &ExpectedContentPostingDataOffset) &&
+                 !AddOverflowSize(ExpectedContentPostingDataOffset, (size_t)Header->ContentPostingDataSize, &ContentPostingDataEnd) &&
+                 !AlignSize(ContentPostingDataEnd, alignof(CearchPostingSkip), &ExpectedContentSkipOffset) &&
+                 !MultiplyOverflowSize((size_t)Header->ContentSkipCount, sizeof(CearchPostingSkip), &ContentSkipBytes) &&
+                 !AddOverflowSize(ExpectedContentSkipOffset, ContentSkipBytes, &ExpectedFileSize) &&
                  Header->EntryOffset == sizeof(CearchDiskHeader) &&
                  Header->StringOffset == ExpectedStringOffset &&
                  Header->TrigramOffset == ExpectedTrigramOffset &&
                  Header->PostingDataOffset == ExpectedPostingDataOffset &&
                  Header->SkipOffset == ExpectedSkipOffset &&
+                 Header->ContentTrigramOffset == ExpectedContentTrigramOffset &&
+                 Header->ContentPostingDataOffset == ExpectedContentPostingDataOffset &&
+                 Header->ContentSkipOffset == ExpectedContentSkipOffset &&
                  Header->FileSize == ExpectedFileSize &&
                  ExpectedFileSize == MappingSize;
 
@@ -345,18 +456,26 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
         const unsigned char *PostingData = Bytes + Header->PostingDataOffset;
         const CearchPostingSkip *Skips =
             (const CearchPostingSkip *)(Bytes + Header->SkipOffset);
+        const CearchTrigramPosting *ContentTrigrams =
+            (const CearchTrigramPosting *)(Bytes + Header->ContentTrigramOffset);
+        const unsigned char *ContentPostingData = Bytes + Header->ContentPostingDataOffset;
+        const CearchPostingSkip *ContentSkips =
+            (const CearchPostingSkip *)(Bytes + Header->ContentSkipOffset);
 
         if (!PaddingIsZero(Bytes, StringEnd, ExpectedTrigramOffset) ||
-            !PaddingIsZero(Bytes, PostingDataEnd, ExpectedSkipOffset)) Valid = false;
+            !PaddingIsZero(Bytes, PostingDataEnd, ExpectedSkipOffset) ||
+            !PaddingIsZero(Bytes, SkipEnd, ExpectedContentTrigramOffset) ||
+            !PaddingIsZero(Bytes, ContentPostingDataEnd, ExpectedContentSkipOffset)) Valid = false;
 
         for (size_t Index = 0U; Valid && Index < (size_t)Header->EntryCount; ++Index) {
             const CearchDiskEntry *Entry = &Entries[Index];
             uint64_t PathEnd = (uint64_t)Entry->PathOffset + Entry->PathLength;
-            bool ReservedZero = true;
-            for (size_t Byte = 0U; Byte < sizeof(Entry->Reserved); ++Byte)
-                if (Entry->Reserved[Byte] != 0U) ReservedZero = false;
+            bool ReservedValid = Entry->Reserved[0] <= 1U;
+            for (size_t Byte = 1U; Byte < sizeof(Entry->Reserved); ++Byte)
+                if (Entry->Reserved[Byte] != 0U) ReservedValid = false;
             if (Entry->PathLength == 0U || PathEnd >= Header->StringSize ||
-                Entry->Type < 1U || Entry->Type > 3U || !ReservedZero ||
+                Entry->Type < 1U || Entry->Type > 3U || !ReservedValid ||
+                Entry->MtimeNsec >= 1000000000U || Entry->CtimeNsec >= 1000000000U ||
                 Strings[PathEnd] != '\0' ||
                 memchr(Strings + Entry->PathOffset, '\0', Entry->PathLength) != nullptr) {
                 Valid = false;
@@ -364,73 +483,15 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
             }
         }
 
-        uint64_t ExpectedDataStart = 0U;
-        uint64_t ExpectedSkipStart = 0U;
-        uint64_t TotalFileIds = 0U;
-        for (size_t PostingIndex = 0U; Valid && PostingIndex < (size_t)Header->TrigramCount; ++PostingIndex) {
-            const CearchTrigramPosting *Posting = &Trigrams[PostingIndex];
-            uint64_t ExpectedLocalSkips = Posting->Count / CearchPostingSkipStride +
-                                          (Posting->Count % CearchPostingSkipStride != 0U);
-            if (Posting->Reserved != 0U || Posting->Key > 0xFFFFFFU ||
-                Posting->Count == 0U || Posting->Start != ExpectedDataStart ||
-                Posting->Start > Header->PostingDataSize ||
-                Posting->SkipStart != ExpectedSkipStart ||
-                Posting->SkipCount != ExpectedLocalSkips ||
-                Posting->SkipStart > Header->SkipCount ||
-                Posting->SkipCount > Header->SkipCount - Posting->SkipStart ||
-                (PostingIndex && Trigrams[PostingIndex - 1U].Key >= Posting->Key) ||
-                Posting->Count > Header->FileIdCount - TotalFileIds) {
-                Valid = false;
-                break;
-            }
-
-            size_t Offset = (size_t)Posting->Start;
-            uint32_t CurrentId = 0U;
-            for (uint64_t Ordinal = 0U; Ordinal < Posting->Count; ++Ordinal) {
-                uint32_t Delta = 0U;
-                if (!ReadUleb128(PostingData, (size_t)Header->PostingDataSize, &Offset, &Delta)) {
-                    Valid = false;
-                    break;
-                }
-                if (Ordinal == 0U) {
-                    CurrentId = Delta;
-                } else {
-                    if (Delta == 0U || CurrentId > UINT32_MAX - Delta) {
-                        Valid = false;
-                        break;
-                    }
-                    CurrentId += Delta;
-                }
-                if (CurrentId >= Header->EntryCount) {
-                    Valid = false;
-                    break;
-                }
-
-                if (Ordinal % CearchPostingSkipStride == 0U) {
-                    size_t SkipIndex = (size_t)(Posting->SkipStart + Ordinal / CearchPostingSkipStride);
-                    if (SkipIndex >= (size_t)Header->SkipCount) {
-                        Valid = false;
-                        break;
-                    }
-                    const CearchPostingSkip *Skip = &Skips[SkipIndex];
-                    if (PostingIndex > UINT32_MAX || Ordinal > UINT32_MAX ||
-                        Skip->PostingIndex != (uint32_t)PostingIndex ||
-                        Skip->Ordinal != (uint32_t)Ordinal ||
-                        Skip->ByteOffset != Offset ||
-                        Skip->FileId != CurrentId ||
-                        Skip->Reserved != 0U) {
-                        Valid = false;
-                        break;
-                    }
-                }
-            }
-            ExpectedDataStart = Offset;
-            ExpectedSkipStart += Posting->SkipCount;
-            TotalFileIds += Posting->Count;
-        }
-        if (ExpectedDataStart != Header->PostingDataSize ||
-            ExpectedSkipStart != Header->SkipCount ||
-            TotalFileIds != Header->FileIdCount) Valid = false;
+        Valid = Valid &&
+            ValidateTrigramSection(Trigrams, (size_t)Header->TrigramCount,
+                                   PostingData, (size_t)Header->PostingDataSize,
+                                   Skips, (size_t)Header->SkipCount,
+                                   Header->FileIdCount, Header->EntryCount) &&
+            ValidateTrigramSection(ContentTrigrams, (size_t)Header->ContentTrigramCount,
+                                   ContentPostingData, (size_t)Header->ContentPostingDataSize,
+                                   ContentSkips, (size_t)Header->ContentSkipCount,
+                                   Header->ContentFileIdCount, Header->EntryCount);
 
         if (Valid) {
             Store->Descriptor = Descriptor;
@@ -447,6 +508,13 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
             Store->TrigramSkips = Skips;
             Store->TrigramSkipCount = (size_t)Header->SkipCount;
             Store->TrigramPostingCount = (size_t)Header->FileIdCount;
+            Store->ContentTrigrams = ContentTrigrams;
+            Store->ContentTrigramCount = (size_t)Header->ContentTrigramCount;
+            Store->ContentTrigramData = ContentPostingData;
+            Store->ContentTrigramDataSize = (size_t)Header->ContentPostingDataSize;
+            Store->ContentTrigramSkips = ContentSkips;
+            Store->ContentTrigramSkipCount = (size_t)Header->ContentSkipCount;
+            Store->ContentTrigramPostingCount = (size_t)Header->ContentFileIdCount;
             return true;
         }
     }
