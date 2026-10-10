@@ -20,7 +20,7 @@
 - Bounded parallel client processing, timeouts/cancellation, and load testing.
 - Append-only update journal and snapshot compaction; establish whether benchmarks justify this complexity.
 - Repeatable benchmark datasets and reports, protocol fuzzing, filesystem race tests, and broader failure-injection coverage.
-- Unambiguous output for arbitrary Linux filenames (for example, a NUL-delimited output mode).
+- Structured output formats beyond newline-delimited and NUL-delimited paths.
 - Portable on-disk encoding is not a promise of the current native-layout snapshot.
 - Optional service-manager units and runtime packaging polish.
 
