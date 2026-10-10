@@ -150,7 +150,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
                                nullptr, Store.TrigramPostingCount,
                                Store.TrigramData, Store.TrigramDataSize,
                                Store.TrigramSkips, Store.TrigramSkipCount)) {
-        fprintf(stderr, "cearch: invalid persisted trigram index\\n");
+        fprintf(stderr, "cearch: invalid persisted trigram index\n");
         FreeTable(&Table);
         CearchStoreClose(&Store);
         return false;
@@ -158,7 +158,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
 
     CearchQuery ParsedQuery = {0};
     if (!CearchQueryParse(Query, &ParsedQuery)) {
-        fprintf(stderr, "cearch: invalid query expression\\n");
+        fprintf(stderr, "cearch: invalid query expression\n");
         CearchFreeNameIndex(&Index);
         FreeTable(&Table);
         CearchStoreClose(&Store);
