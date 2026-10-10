@@ -1,6 +1,5 @@
 #include "index.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,12 +9,6 @@ typedef struct {
     uint32_t Key;
     uint32_t FileId;
 } TrigramPair;
-
-typedef struct {
-    uint32_t Key;
-    size_t Start;
-    size_t Count;
-} TrigramPosting;
 
 static uint32_t TrigramKey(unsigned char A, unsigned char B, unsigned char C) {
     return ((uint32_t)A << 16U) | ((uint32_t)B << 8U) | (uint32_t)C;
@@ -50,7 +43,6 @@ static bool AddPathTrigrams(TrigramPair **Pairs, size_t *Count, size_t *Capacity
                             const char *Text, uint32_t FileId) {
     size_t Length = strlen(Text);
     if (Length < 3U) return true;
-    uint32_t Previous = UINT32_MAX;
     for (size_t Index = 0; Index + 2U < Length; ++Index) {
         unsigned char A = (unsigned char)Text[Index];
         unsigned char B = (unsigned char)Text[Index + 1U];
@@ -59,10 +51,8 @@ static bool AddPathTrigrams(TrigramPair **Pairs, size_t *Count, size_t *Capacity
         if (B >= 'A' && B <= 'Z') B = (unsigned char)(B + ('a' - 'A'));
         if (C >= 'A' && C <= 'Z') C = (unsigned char)(C + ('a' - 'A'));
         uint32_t Key = TrigramKey(A, B, C);
-        if (Key == Previous) continue;
         if (*Count == SIZE_MAX || !ReservePairs(Pairs, Capacity, *Count + 1U)) return false;
         (*Pairs)[(*Count)++] = (TrigramPair){ .Key = Key, .FileId = FileId };
-        Previous = Key;
     }
     return true;
 }
@@ -90,7 +80,7 @@ static bool BuildTrigramIndex(CearchIndex *Index) {
     for (size_t PairIndex = 0; PairIndex < PostingCount; ++PairIndex)
         if (PairIndex == 0 || Pairs[PairIndex].Key != Pairs[PairIndex - 1U].Key)
             ++UniqueKeys;
-    if (UniqueKeys > SIZE_MAX / sizeof(*Index->Trigrams)) {
+    if (UniqueKeys > SIZE_MAX / sizeof(*Index->Trigrams) || PostingCount > SIZE_MAX / sizeof(*Index->TrigramFileIds)) {
         free(Pairs);
         return false;
     }
@@ -102,7 +92,7 @@ static bool BuildTrigramIndex(CearchIndex *Index) {
         return false;
     }
     Index->TrigramCount = UniqueKeys;
-    Index->TrigramPostingCount = PostingCount;
+    Index->CearchTrigramPostingCount = PostingCount;
 
     size_t PostingIndex = 0, KeyIndex = 0;
     while (PostingIndex < PostingCount) {
