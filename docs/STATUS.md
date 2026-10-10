@@ -4,17 +4,17 @@
 
 - C23-compatible Linux CLI (build flag `-std=gnu2x` for GCC 13 compatibility).
 - Recursive non-symlink-following index scan over one or multiple roots.
-- Atomic text snapshot replacement with file flush/fsync and rename.
-- Escaped path serialization and record format versioning.
+- Versioned binary snapshot replacement using a temporary file, file fsync, and rename.
+- Memory-mapped snapshot validation and path string-table records.
 - Case-insensitive basename search and optional full-path search.
 - Fresh literal content scan of indexed regular files.
 - File/directory statistics.
-- Smoke tests in GitHub Actions.
+- Unit tests for trigram candidate generation and snapshot round-trip/truncated input; CLI smoke tests in GitHub Actions.
 - No mandatory third-party library.
 
 ## Not yet the complete target architecture
 
-This snapshot is a foundational baseline, not the fully specified high-performance search daemon. It does not yet implement:
+This snapshot is a foundational baseline, not the fully specified high-performance search daemon. See [AUDIT.md](AUDIT.md) for confirmed defects and priorities, and [TESTING.md](TESTING.md) for CI rules and coverage gaps. It does not yet implement:
 
 - daemon/client Unix socket protocol;
 - inotify watcher with overflow recovery and reconciliation loop;
