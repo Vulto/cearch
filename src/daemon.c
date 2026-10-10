@@ -485,44 +485,94 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
     return true;
 }
 
+static bool ContentIndexFresh(const CearchFileEntry *Entry) {
+    if (!Entry || !Entry->ContentIndexed || Entry->Type != 'f') return false;
+    struct stat Status;
+    if (stat(Entry->Path, &Status) != 0 || !S_ISREG(Status.st_mode)) return false;
+    return (uint64_t)Status.st_size == Entry->Size &&
+           (int64_t)Status.st_mtim.tv_sec == Entry->Mtime &&
+           (uint32_t)Status.st_mtim.tv_nsec == Entry->MtimeNsec &&
+           (int64_t)Status.st_ctim.tv_sec == Entry->Ctime &&
+           (uint32_t)Status.st_ctim.tv_nsec == Entry->CtimeNsec &&
+           (uint64_t)Status.st_dev == Entry->Device &&
+           (uint64_t)Status.st_ino == Entry->Inode;
+}
+
 static bool SearchContent(CearchDaemon *Daemon, const char *Query, uint32_t Limit, bool NullDelimited,
                           char **Output, size_t *OutputLength, uint32_t *Found) {
     size_t Capacity = 4096U;
     char *Result = malloc(Capacity);
     if (!Result) return false;
-    size_t Length = 0;
-    uint32_t Matches = 0;
-    for (size_t Index = 0; Index < Daemon->EntryCount && Matches < Limit; ++Index) {
-        const CearchFileEntry *Entry = &Daemon->Entries[Index];
-        if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
-        size_t PathLength = strlen(Entry->Path);
-        if (PathLength > SIZE_MAX - Length - 1U) {
-            free(Result);
-            return false;
-        }
-        size_t Needed = Length + PathLength + 1U;
-        if (Needed > Capacity) {
-            size_t Next = Capacity;
-            while (Next < Needed) {
-                if (Next > SIZE_MAX / 2U) {
-                    free(Result);
-                    return false;
-                }
-                Next *= 2U;
-            }
-            char *NewResult = realloc(Result, Next);
-            if (!NewResult) {
-                free(Result);
-                return false;
-            }
-            Result = NewResult;
-            Capacity = Next;
-        }
-        memcpy(Result + Length, Entry->Path, PathLength);
-        Length += PathLength;
-        Result[Length++] = NullDelimited ? '\0' : '\n';
-        ++Matches;
+    CearchNameQuery Prepared = {0};
+    if (!CearchNameQueryPrepare(Query, &Prepared)) {
+        free(Result);
+        return false;
     }
+
+    size_t Length = 0U;
+    uint32_t Matches = 0U;
+    bool Success = true;
+    if (Prepared.Count == 0U) {
+        for (size_t Index = 0U; Index < Daemon->EntryCount && Matches < Limit; ++Index) {
+            const CearchFileEntry *Entry = &Daemon->Entries[Index];
+            if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
+            if (!AppendResultPath(&Result, &Length, &Capacity, Entry->Path, NullDelimited)) {
+                Success = false;
+                break;
+            }
+            ++Matches;
+        }
+    } else {
+        CearchIndex ContentIndex = { .Entries = Daemon->Entries, .Count = Daemon->EntryCount };
+        if (!CearchAttachNameIndex(&ContentIndex, Daemon->Store.ContentTrigrams,
+                                   Daemon->Store.ContentTrigramCount, nullptr,
+                                   Daemon->Store.ContentTrigramPostingCount,
+                                   Daemon->Store.ContentTrigramData,
+                                   Daemon->Store.ContentTrigramDataSize,
+                                   Daemon->Store.ContentTrigramSkips,
+                                   Daemon->Store.ContentTrigramSkipCount)) {
+            Success = false;
+        } else {
+            bool *Fresh = calloc(Daemon->EntryCount ? Daemon->EntryCount : 1U, sizeof(*Fresh));
+            if (!Fresh) Success = false;
+            if (Success) {
+                for (size_t Index = 0U; Index < Daemon->EntryCount; ++Index)
+                    Fresh[Index] = ContentIndexFresh(&Daemon->Entries[Index]);
+                CearchNameCandidateIterator Iterator = {0};
+                CearchNameQuery PreparedCopy = Prepared;
+                if (!CearchNameCandidatesBegin(&ContentIndex, &PreparedCopy, &Iterator)) {
+                    Success = false;
+                } else {
+                    uint32_t FileId = 0U;
+                    while (Success && Matches < Limit &&
+                           CearchNameCandidatesNext(&Iterator, &FileId)) {
+                        if ((size_t)FileId >= Daemon->EntryCount || !Fresh[FileId]) continue;
+                        const CearchFileEntry *Entry = &Daemon->Entries[FileId];
+                        if (!FileContains(Entry->Path, Query)) continue;
+                        if (!AppendResultPath(&Result, &Length, &Capacity, Entry->Path, NullDelimited)) {
+                            Success = false;
+                            break;
+                        }
+                        ++Matches;
+                    }
+                    for (size_t Index = 0U; Success && Matches < Limit && Index < Daemon->EntryCount; ++Index) {
+                        const CearchFileEntry *Entry = &Daemon->Entries[Index];
+                        if (Entry->Type != 'f' || Fresh[Index] || !FileContains(Entry->Path, Query)) continue;
+                        if (!AppendResultPath(&Result, &Length, &Capacity, Entry->Path, NullDelimited)) {
+                            Success = false;
+                            break;
+                        }
+                        ++Matches;
+                    }
+                }
+            }
+            free(Fresh);
+        }
+        CearchFreeNameIndex(&ContentIndex);
+    }
+
+    CearchNameQueryFree(&Prepared);
+    if (!Success) { free(Result); return false; }
     *Output = Result;
     *OutputLength = Length;
     *Found = Matches;
