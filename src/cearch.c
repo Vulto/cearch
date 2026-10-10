@@ -316,12 +316,12 @@ static bool LoadDatabase(const char *Database, FileTable *Table) {
             break;
         }
         Line[--LineLength] = '\0';
-        char *Fields[6] = {0};
+        char *Fields[7] = {0};
         char *Cursor = Line;
-        for (size_t Field = 0; Field < 6U; ++Field) {
+        for (size_t Field = 0; Field < 7U; ++Field) {
             Fields[Field] = Cursor;
             char *Tab = strchr(Cursor, '\t');
-            if (Field < 5U) {
+            if (Field < 6U) {
                 if (!Tab) {
                     Success = false;
                     break;
