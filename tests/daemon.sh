@@ -2,7 +2,12 @@
 set -eu
 Daemon=${1:-./cearchd}
 TempDir=$(mktemp -d)
-trap 'kill "$DaemonPid" 2>/dev/null || true; wait "$DaemonPid" 2>/dev/null || true; rm -rf "$TempDir"' EXIT HUP INT TERM
+DaemonPid=
+cleanup() {
+    if [ -n "$DaemonPid" ]; then kill "$DaemonPid" 2>/dev/null || true; wait "$DaemonPid" 2>/dev/null || true; fi
+    rm -rf "$TempDir"
+}
+trap cleanup EXIT HUP INT TERM
 mkdir -p "$TempDir/root/sub" "$TempDir/run" "$TempDir/state"
 printf 'daemon_query_marker\n' > "$TempDir/root/needle.txt"
 printf 'other contents\n' > "$TempDir/root/sub/readme.txt"
@@ -20,11 +25,8 @@ grep -q '/needle.txt$' "$TempDir/search"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/stats"
-grep -q '^entries: 4
+grep -q '^entries: 4$' "$TempDir/stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
-echo 'cearch daemon tests passed'
- "$TempDir/stats"
-"$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
-wait "$DaemonPid"
+DaemonPid=
 echo 'cearch daemon tests passed'
