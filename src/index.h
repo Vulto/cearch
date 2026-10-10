@@ -58,6 +58,7 @@ typedef struct {
     uint64_t End;
     uint32_t AllCursor;
     const CearchTrigramPosting *Seed;
+    size_t BytePosition;
     uint32_t CurrentFileId;
     bool EncodedSeed;
     bool AllFiles;
