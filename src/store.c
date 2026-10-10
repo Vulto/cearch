@@ -145,15 +145,16 @@ bool CearchStoreWrite(const char *Database,
     }
 
     size_t NameLength = strlen(Database);
-    if (NameLength > SIZE_MAX - 48U) {
+    static const char TemporarySuffix[] = ".tmp.XXXXXX";
+    if (NameLength > SIZE_MAX - sizeof(TemporarySuffix)) {
         errno = EOVERFLOW;
         return false;
     }
-    size_t TemporarySize = NameLength + 48U;
+    size_t TemporarySize = NameLength + sizeof(TemporarySuffix);
     char *Temporary = malloc(TemporarySize);
     if (!Temporary) return false;
-    (void)snprintf(Temporary, TemporarySize, "%s.tmp.%ld", Database, (long)getpid());
-    int Descriptor = open(Temporary, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    (void)snprintf(Temporary, TemporarySize, "%s%s", Database, TemporarySuffix);
+    int Descriptor = mkostemp(Temporary, O_CLOEXEC);
     if (Descriptor < 0) {
         free(Temporary);
         return false;
