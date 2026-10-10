@@ -20,7 +20,11 @@ grep -q '/needle.txt$' "$TempDir/search"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/stats"
-grep -q '^entries: 4$' "$TempDir/stats"
+grep -q '^entries: 4
+"$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
+wait "$DaemonPid"
+echo 'cearch daemon tests passed'
+ "$TempDir/stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
 echo 'cearch daemon tests passed'
