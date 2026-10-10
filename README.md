@@ -28,7 +28,7 @@ The project aims to avoid mandatory third-party dependencies. The current baseli
 ./cearch content --db ~/.local/state/cearch/index 'needle'
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/USAGE.md](docs/USAGE.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/USAGE.md](docs/USAGE.md), [docs/AUDIT.md](docs/AUDIT.md), and [docs/TESTING.md](docs/TESTING.md).
 
 ## Design constraints
 
@@ -41,4 +41,4 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/USAGE.md](docs/USAGE.
 
 ## Status
 
-The initial implementation is deliberately conservative: one-shot index/search commands, durable portable records, trigram candidate generation, filters, content verification, and tests. A long-running daemon, concurrent query workers, durable inverted content index, compressed mmap snapshots, and robust watch management are follow-on work and are documented as such.
+The initial implementation is deliberately conservative: one-shot index/search commands, a versioned native-layout binary snapshot, in-memory trigram candidate generation, literal content verification, and tests. The snapshot is not yet portable across ABIs or endianness. A long-running daemon, concurrent query workers, durable inverted content index, compressed mmap snapshots, and robust watch management are follow-on work and are documented as such.
