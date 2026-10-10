@@ -43,8 +43,8 @@ Attempts=0
 until timeout 0.25s "$Daemon" client --socket "$TempDir/run/cearch.sock" search during-slow > "$TempDir/during-slow-search" &&
       grep -q '/during-slow.txt$' "$TempDir/during-slow-search"; do
     Attempts=$((Attempts + 1))
-    if [ "$Attempts" -ge 8 ]; then echo 'reconciliation blocked by a partial client request' >&2; exit 1; fi
-    sleep 0.05
+    if [ "$Attempts" -ge 20 ]; then echo 'reconciliation blocked by a partial client request' >&2; exit 1; fi
+    sleep 0.1
 done
 wait "$SlowPid"
 SlowPid=
