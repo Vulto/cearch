@@ -14,11 +14,11 @@ make test
 ## Quick start
 
 ```sh
-Root="$HOME"
+Root="$HOME/Documents"
 Db="$HOME/.local/state/cearch/index.db"
 
 # Build or refresh the index snapshot
-mkdir -p "$(dirname "$Db")"
+mkdir -p "$Root" "$(dirname "$Db")"
 ./cearch index --db "$Db" "$Root"
 
 # Start the daemon in the foreground and keep this root reconciled
