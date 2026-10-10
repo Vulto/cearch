@@ -317,9 +317,13 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
             .Path = (char *)Path,
             .Size = DiskEntry->Size,
             .Mtime = DiskEntry->Mtime,
+            .MtimeNsec = DiskEntry->MtimeNsec,
+            .Ctime = DiskEntry->Ctime,
+            .CtimeNsec = DiskEntry->CtimeNsec,
             .Device = DiskEntry->Device,
             .Inode = DiskEntry->Inode,
-            .Type = DiskEntry->Type == 1U ? 'f' : DiskEntry->Type == 2U ? 'd' : 'o'
+            .Type = DiskEntry->Type == 1U ? 'f' : DiskEntry->Type == 2U ? 'd' : 'o',
+            .ContentIndexed = DiskEntry->Reserved[0] != 0U
         };
     }
 
