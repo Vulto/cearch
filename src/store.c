@@ -155,8 +155,9 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
         const char *Strings = (const char *)Mapping + Header->StringOffset;
         for (size_t Index = 0; Index < (size_t)Header->EntryCount; ++Index) {
             const CearchDiskEntry *Entry = &Entries[Index];
-            if ((uint64_t)Entry->PathOffset + Entry->PathLength > Header->StringSize ||
-                Entry->PathLength == 0U || Entry->Type < 1U || Entry->Type > 3U) {
+            if ((uint64_t)Entry->PathOffset + Entry->PathLength >= Header->StringSize ||
+                Entry->PathLength == 0U || Entry->Type < 1U || Entry->Type > 3U ||
+                Strings[(size_t)Entry->PathOffset + Entry->PathLength] != '\0') {
                 Valid = false;
                 break;
             }
