@@ -232,6 +232,7 @@ static bool ParseValueAndUnit(const char *Text, bool Duration,
 }
 
 static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
+    if (!Term) { errno = EINVAL; return NULL; }
     if (Mode != CearchQuerySubstring) return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
     CearchQueryNodeType Type = CearchQueryTerm;
     if (strncasecmp(Term, "fuzzy:", 6U) == 0) {
