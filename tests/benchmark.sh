@@ -2,8 +2,8 @@
 set -eu
 
 Program=${1:-./cearch}
-FileCount=$(CEARCH_BENCH_FILES:-10000)
-Repeats=$(CEARCH_BENCH_REPEATS:-5)
+FileCount=${CEARCH_BENCH_FILES:-10000}
+Repeats=${CEARCH_BENCH_REPEATS:-5}
 for Value in "$FileCount" "$Repeats"; do
     case "$Value" in
         ''|*[!0-9]*) echo "benchmark counts must be positive integers" >&2; exit 2 ;;
