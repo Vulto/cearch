@@ -792,7 +792,7 @@ static void Usage(FILE *Stream) {
     fprintf(Stream,
         "Usage:\n"
         "  cearchd serve --db DB [--socket PATH]\n"
-        "  cearchd client [--socket PATH] search [--path] [--null] [--limit N] QUERY\n"
+        "  cearchd client [--socket PATH] [--limit N] search [--path] [--null] QUERY\n"
         "  cearchd client [--socket PATH] content [--null] [--limit N] QUERY\n"
         "  cearchd client [--socket PATH] stats|ping|shutdown\n");
 }
@@ -819,9 +819,16 @@ int main(int Argc, char **Argv) {
     const char *SocketPath = nullptr;
     int Start = 2;
     if (strcmp(Argv[1], "client") == 0) {
+        uint32_t ClientLimit = CearchDefaultLimit;
         for (int Index = 2; Index < Argc; ++Index) {
             if (strcmp(Argv[Index], "--socket") == 0 && Index + 1 < Argc) {
                 SocketPath = Argv[++Index];
+            } else if (strcmp(Argv[Index], "--limit") == 0 && Index + 1 < Argc) {
+                if (!ParseNumber(Argv[++Index], &ClientLimit) || !ClientLimit ||
+                    ClientLimit > CearchMaximumResults) {
+                    fprintf(stderr, "cearch: invalid limit\n");
+                    return 2;
+                }
             } else {
                 Start = Index;
                 break;
@@ -837,7 +844,7 @@ int main(int Argc, char **Argv) {
             return 2;
         }
         uint16_t Command = 0;
-        uint32_t Flags = 0, Limit = CearchDefaultLimit;
+        uint32_t Flags = 0, Limit = ClientLimit;
         const char *Query = nullptr;
         const char *Action = Argv[Start++];
         if (strcmp(Action, "search") == 0) Command = CearchCommandSearch;
