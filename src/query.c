@@ -258,7 +258,7 @@ static CearchQueryNode *ParsePrimary(CearchParser *Parser) {
         CearchQueryMatchMode Mode = Parser->Mode;
         Parser->Text = NULL;
         NextToken(Parser);
-        return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
+        return BuildTermNode(Term, Mode);
     }
     if (Parser->Type == TokenLeftParen) {
         NextToken(Parser);
