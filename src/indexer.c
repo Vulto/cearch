@@ -185,11 +185,24 @@ static bool WriteSnapshot(const char *Database, const CearchScanTable *Table) {
         .Count = Table->Count
     };
     bool Success = CearchBuildNameIndex(&NameIndex);
+    CearchTrigramPosting *EncodedTrigrams = nullptr;
+    unsigned char *PostingData = nullptr;
+    size_t PostingDataSize = 0U;
+    CearchPostingSkip *Skips = nullptr;
+    size_t SkipCount = 0U;
+    if (Success) {
+        Success = CearchEncodeNameIndex(&NameIndex, &EncodedTrigrams, &PostingData,
+                                        &PostingDataSize, &Skips, &SkipCount);
+    }
     if (Success) {
         Success = CearchStoreWrite(Database, Entries, Table->Count, Strings, StringsSize,
-                                   NameIndex.Trigrams, NameIndex.TrigramCount,
-                                   NameIndex.TrigramFileIds, NameIndex.TrigramPostingCount);
+                                   EncodedTrigrams, NameIndex.TrigramCount,
+                                   PostingData, PostingDataSize, Skips, SkipCount,
+                                   NameIndex.TrigramPostingCount);
     }
+    free(EncodedTrigrams);
+    free(PostingData);
+    free(Skips);
     if (!Success)
         fprintf(stderr, "cearch: failed building or writing snapshot %s: %s\n", Database, strerror(errno));
 

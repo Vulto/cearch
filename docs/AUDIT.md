@@ -1,22 +1,22 @@
 # Quality Audit
 
-**Scope:** repository source and tests on `main` at audit time. This is a source-level audit; findings are not claims that every defect has been reproduced at runtime.
+**Scope:** baseline audit findings from the repository state at audit time. This is a source-level audit; findings are not claims that every defect has been reproduced at runtime. See the current-state update at the end before treating a finding as unresolved.
 
 ## Executive summary
 
-Cearch is a Linux-first C23 command-line indexer/searcher. The current implementation is a single-process, one-shot tool backed by a memory-mapped, versioned binary snapshot. It is not yet the daemon-backed, continuously reconciled, persistent inverted-index search service described by the target architecture.
+Cearch is a Linux-first C23 command-line indexer/searcher with a memory-mapped, versioned snapshot, an optional daemon/client interface, recursive inotify watches, and periodic reconciliation. Name-search trigram postings are persisted in the snapshot; content search remains a scan of current regular-file contents.
 
 The existing smoke test covers a happy-path temporary tree, basic case-insensitive name search, path search, content search, stats, and a changed file after indexing. It does not currently establish malformed-database safety, atomic-write failure behavior, filesystem race behavior, content chunk-boundary behavior, limits, symlink policy, or performance.
 
 ## Confirmed implementation facts
 
 - `src/cearch.c` performs a recursive walk, records metadata and paths, and loads the full snapshot into heap-allocated entries for each query.
-- `src/index.c` builds an in-memory trigram posting index for each name search. It is rebuilt from all indexed paths per invocation; it is not persisted.
+- `src/index.c` builds the trigram postings at indexing time; the current snapshot stores delta-coded posting data and skip checkpoints, which queries attach from the read-only mapping.
 - `src/store.c` writes a native-layout binary header and records, then uses a temporary file, `fsync`, and `rename`. The format currently has no explicit byte order or ABI-independent field encoding.
 - Content search reads current regular-file contents. It is a fresh scan, not a persistent content index.
 - The CLI emits newline-delimited paths. A filename containing a newline is therefore ambiguous in output.
 - The only existing integration suite is `tests/smoke.sh`; CI previously built and ran that suite with GCC only.
-- The architecture documents describe the daemon, watcher/reconciliation, persistent postings, advanced query language, and scalable snapshot format as future work, not implemented features.
+- Advanced query ASTs, fuzzy scoring, parallel client handling, and reproducible performance benchmarks remain future work.
 
 ## Findings and priorities
 
@@ -69,3 +69,10 @@ Newline-delimited paths cannot unambiguously represent every valid Linux filenam
 - Documentation labels implemented, partially implemented, and planned behavior separately.
 - Performance claims include dataset shape, hardware, command, warm/cold-cache conditions, and repeatable measurements.
 - CI passing is evidence for the checks actually run; it is not proof of daemon, watcher, million-file performance, or filesystem-race correctness.
+
+
+## Current-state update: persisted postings and CI
+
+The baseline findings above describe the older implementation and should not all be read as current defects. The current branch now has a version-3 snapshot format with aligned posting data, delta-coded file IDs, skip checkpoints, and mapped-index attachment. The loader validates the snapshot layout, posting boundaries, delta streams, and checkpoint metadata before exposing the mapping. The path terminator check also requires the terminator to remain inside the string table.
+
+The current CI workflow builds with GCC and Clang using warnings as errors and runs unit/integration tests plus AddressSanitizer and UndefinedBehaviorSanitizer. The CI run for the current posting-format changes passed all three jobs. Remaining audit items—especially traversal partial-success semantics, content-search error/binary behavior, directory fsync durability, newline-delimited output ambiguity, and load/performance benchmarks—still require independent review and tests.

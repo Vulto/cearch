@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define CearchStoreVersion 2U
+#define CearchStoreVersion 3U
 
 typedef struct {
     uint32_t PathOffset;
@@ -30,7 +30,10 @@ typedef struct {
     size_t StringsSize;
     const CearchTrigramPosting *Trigrams;
     size_t TrigramCount;
-    const uint32_t *TrigramFileIds;
+    const unsigned char *TrigramData;
+    size_t TrigramDataSize;
+    const CearchPostingSkip *TrigramSkips;
+    size_t TrigramSkipCount;
     size_t TrigramPostingCount;
 } CearchStore;
 
@@ -38,7 +41,9 @@ bool CearchStoreWrite(const char *Database,
                       const CearchDiskEntry *Entries, size_t EntryCount,
                       const char *Strings, size_t StringsSize,
                       const CearchTrigramPosting *Trigrams, size_t TrigramCount,
-                      const uint32_t *TrigramFileIds, size_t TrigramPostingCount);
+                      const unsigned char *PostingData, size_t PostingDataSize,
+                      const CearchPostingSkip *Skips, size_t SkipCount,
+                      size_t TrigramPostingCount);
 bool CearchStoreOpen(const char *Database, CearchStore *Store);
 void CearchStoreClose(CearchStore *Store);
 const char *CearchStorePath(const CearchStore *Store, size_t EntryIndex);

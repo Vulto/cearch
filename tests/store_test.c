@@ -19,8 +19,11 @@ typedef struct {
     uint64_t StringSize;
     uint64_t TrigramOffset;
     uint64_t TrigramCount;
-    uint64_t PostingOffset;
-    uint64_t PostingCount;
+    uint64_t PostingDataOffset;
+    uint64_t PostingDataSize;
+    uint64_t SkipOffset;
+    uint64_t SkipCount;
+    uint64_t FileIdCount;
     uint64_t FileSize;
 } TestDiskHeader;
 
@@ -36,10 +39,14 @@ static void WriteValidSnapshot(const char *Database,
                                const char *Path,
                                const CearchTrigramPosting *Trigrams,
                                size_t TrigramCount,
-                               const uint32_t *FileIds,
+                               const unsigned char *PostingData,
+                               size_t PostingDataSize,
+                               const CearchPostingSkip *Skips,
+                               size_t SkipCount,
                                size_t PostingCount) {
     assert(CearchStoreWrite(Database, Entry, 1U, Path, strlen(Path) + 1U,
-                            Trigrams, TrigramCount, FileIds, PostingCount));
+                            Trigrams, TrigramCount, PostingData, PostingDataSize,
+                            Skips, SkipCount, PostingCount));
 }
 
 int main(void) {
@@ -56,10 +63,14 @@ int main(void) {
         .Size = 42U, .Mtime = 123, .Device = 1U, .Inode = 2U, .Type = 1U
     };
     const CearchTrigramPosting Trigrams[] = {
-        { .Key = 0x616263U, .Reserved = 0U, .Start = 0U, .Count = 1U }
+        { .Key = 0x616263U, .Reserved = 0U, .Start = 0U, .Count = 1U, .SkipStart = 0U, .SkipCount = 1U }
     };
-    const uint32_t FileIds[] = { 0U };
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    const unsigned char PostingData[] = { 0U };
+    const CearchPostingSkip Skips[] = {
+        { .PostingIndex = 0U, .Ordinal = 0U, .ByteOffset = 1U, .FileId = 0U, .Reserved = 0U }
+    };
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData,
+                       sizeof(PostingData), Skips, 1U, 1U);
 
     CearchStore Store = { .Descriptor = -1 };
     assert(CearchStoreOpen(Database, &Store));
@@ -70,7 +81,10 @@ int main(void) {
     assert(Store.Trigrams[0].Key == 0x616263U);
     assert(Store.Trigrams[0].Start == 0U);
     assert(Store.Trigrams[0].Count == 1U);
-    assert(Store.TrigramFileIds[0] == 0U);
+    assert(Store.TrigramDataSize == sizeof(PostingData));
+    assert(Store.TrigramData[0] == 0U);
+    assert(Store.TrigramSkipCount == 1U);
+    assert(Store.TrigramSkips[0].FileId == 0U);
     CearchStoreClose(&Store);
 
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
@@ -84,7 +98,7 @@ int main(void) {
     close(Descriptor);
     ExpectRejected(Database);
 
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(pread(Descriptor, &Header, sizeof(Header), 0) == (ssize_t)sizeof(Header));
@@ -93,7 +107,7 @@ int main(void) {
     close(Descriptor);
     ExpectRejected(Database);
 
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(pread(Descriptor, &Header, sizeof(Header), 0) == (ssize_t)sizeof(Header));
@@ -103,7 +117,7 @@ int main(void) {
     close(Descriptor);
     ExpectRejected(Database);
 
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_WRONLY | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(ftruncate(Descriptor, 4) == 0);
