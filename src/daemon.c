@@ -508,7 +508,7 @@ static int RunClient(const char *SocketPath, uint16_t Command, uint32_t Flags,
     }
     Output[Response.MessageLength] = '\0';
     if (Response.Status == 0U) {
-        if (Response.MessageLength) fwrite(Output, 1U, Response.MessageLength, stdout);
+        if (Response.MessageLength) (void)fwrite(Output, 1U, Response.MessageLength, stdout);
     } else {
         fprintf(stderr, "cearch: %s\n", Output);
     }
