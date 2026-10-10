@@ -2,7 +2,52 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+
+static void TestEncodedPostingCheckpoints(void) {
+    enum { EntryCount = 70 };
+    char Paths[EntryCount][32];
+    CearchFileEntry Entries[EntryCount] = {0};
+    for (size_t Index = 0U; Index < EntryCount; ++Index) {
+        int Length = snprintf(Paths[Index], sizeof(Paths[Index]), "/tmp/alpha-%02zu.txt", Index);
+        assert(Length > 0 && (size_t)Length < sizeof(Paths[Index]));
+        Entries[Index].Path = Paths[Index];
+    }
+
+    CearchIndex Index = { .Entries = Entries, .Count = EntryCount };
+    assert(CearchBuildNameIndex(&Index));
+    CearchTrigramPosting *Trigrams = nullptr;
+    unsigned char *PostingData = nullptr;
+    size_t PostingDataSize = 0U;
+    CearchPostingSkip *Skips = nullptr;
+    size_t SkipCount = 0U;
+    assert(CearchEncodeNameIndex(&Index, &Trigrams, &PostingData, &PostingDataSize,
+                                 &Skips, &SkipCount));
+    assert(PostingDataSize > 0U && SkipCount > 0U);
+
+    CearchIndex MappedIndex = { .Entries = Entries, .Count = EntryCount };
+    assert(CearchAttachNameIndex(&MappedIndex, Trigrams, Index.TrigramCount, nullptr,
+                                 Index.TrigramPostingCount, PostingData, PostingDataSize,
+                                 Skips, SkipCount));
+    CearchNameQuery Query = {0};
+    CearchNameCandidateIterator Iterator = {0};
+    assert(CearchNameQueryPrepare("alpha", &Query));
+    assert(CearchNameCandidatesBegin(&MappedIndex, &Query, &Iterator));
+    uint32_t FileId = UINT32_MAX;
+    for (uint32_t Expected = 0U; Expected < EntryCount; ++Expected) {
+        assert(CearchNameCandidatesNext(&Iterator, &FileId));
+        assert(FileId == Expected);
+    }
+    assert(!CearchNameCandidatesNext(&Iterator, &FileId));
+    CearchNameQueryFree(&Query);
+    CearchFreeNameIndex(&MappedIndex);
+    CearchFreeNameIndex(&Index);
+    free(Trigrams);
+    free(PostingData);
+    free(Skips);
+}
 
 int main(void) {
     CearchFileEntry Entries[] = {
@@ -83,6 +128,7 @@ int main(void) {
     assert(Index.TrigramCount == 0U);
     assert(Index.TrigramPostingCount == 0U);
 
+    TestEncodedPostingCheckpoints();
     puts("cearch index unit tests passed");
     return 0;
 }
