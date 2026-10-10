@@ -785,6 +785,7 @@ static int RunDaemon(const char *Database, const char *SocketPath,
         if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
         FreeRoots(&Daemon);
         FreeDaemonIndex(&Daemon);
+        DestroyDaemonSync(&Daemon);
         return 1;
     }
     memcpy(Address.sun_path, SocketPath, strlen(SocketPath) + 1U);
