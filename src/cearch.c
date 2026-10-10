@@ -137,29 +137,32 @@ static const char *BaseName(const char *Path) {
 
 static bool SearchCommand(const char *Database, const char *Query, bool MatchPath, size_t Limit) {
     FileTable Table = {0};
-    if (!LoadDatabase(Database, &Table)) return false;
+    CearchStore Store = { .Descriptor = -1 };
+    if (!LoadDatabase(Database, &Table, &Store)) return false;
 
     CearchIndex Index = {0};
     Index.Entries = Table.Entries;
     Index.Count = Table.Count;
-    if (Table.Count > UINT32_MAX || !CearchBuildNameIndex(&Index)) {
-        fprintf(stderr, "cearch: could not build trigram index\n");
+    if (!CearchAttachNameIndex(&Index, Store.Trigrams, Store.TrigramCount,
+                               Store.TrigramFileIds, Store.TrigramPostingCount)) {
+        fprintf(stderr, "cearch: invalid persisted trigram index\n");
         FreeTable(&Table);
-        CearchFreeNameIndex(&Index);
+        CearchStoreClose(&Store);
         return false;
     }
 
-    size_t Found = 0;
+    size_t Found = 0U;
     size_t QueryLength = strlen(Query);
     bool UseTrigrams = QueryLength >= 3U && !MatchPath;
     CearchNameQuery Prepared = {0};
     if (UseTrigrams && !CearchNameQueryPrepare(Query, &Prepared)) {
         CearchFreeNameIndex(&Index);
         FreeTable(&Table);
+        CearchStoreClose(&Store);
         return false;
     }
 
-    for (size_t EntryIndex = 0; EntryIndex < Table.Count; ++EntryIndex) {
+    for (size_t EntryIndex = 0U; EntryIndex < Table.Count; ++EntryIndex) {
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
         if (UseTrigrams &&
@@ -169,6 +172,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
             CearchNameQueryFree(&Prepared);
             CearchFreeNameIndex(&Index);
             FreeTable(&Table);
+            CearchStoreClose(&Store);
             return false;
         }
         if (++Found >= Limit) break;
@@ -177,6 +181,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     CearchNameQueryFree(&Prepared);
     CearchFreeNameIndex(&Index);
     FreeTable(&Table);
+    CearchStoreClose(&Store);
     return true;
 }
 
