@@ -35,7 +35,7 @@ grep -q '/needle.txt$' "$TempDir/regex"
 test "$(wc -l < "$TempDir/fuzzy")" -eq 2
 test "$(sed -n '1p' "$TempDir/fuzzy")" = "$TempDir/root/report.txt"
 test "$(sed -n '2p' "$TempDir/fuzzy")" = "$TempDir/root/reprot.txt"
-"$Daemon" client --limit 1 search fuzzy:report > "$TempDir/fuzzy-limit"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" --limit 1 search fuzzy:report > "$TempDir/fuzzy-limit"
 test "$(wc -l < "$TempDir/fuzzy-limit")" -eq 1
 test "$(cat "$TempDir/fuzzy-limit")" = "$TempDir/root/report.txt"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search ext:txt > "$TempDir/ext"
