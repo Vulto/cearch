@@ -7,21 +7,25 @@ LDFLAGS ?=
 
 all: cearch cearchd
 
-cearch: src/cearch.c src/index.c src/indexer.c src/indexer.h src/index.h src/store.c src/store.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c src/indexer.c src/store.c
+cearch: src/cearch.c src/index.c src/indexer.c src/indexer.h src/index.h src/query.c src/query.h src/store.c src/store.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c src/indexer.c src/query.c src/store.c
 
-cearchd: src/daemon.c src/index.c src/indexer.c src/indexer.h src/protocol.h src/index.h src/store.c src/store.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/daemon.c src/index.c src/indexer.c src/store.c
+cearchd: src/daemon.c src/index.c src/indexer.c src/indexer.h src/protocol.h src/index.h src/query.c src/query.h src/store.c src/store.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/daemon.c src/index.c src/indexer.c src/query.c src/store.c
 
 tests/index_test: tests/index_test.c src/index.c src/index.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/index_test.c src/index.c
 
+tests/query_test: tests/query_test.c src/query.c src/query.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/query_test.c src/query.c
+
 tests/store_test: tests/store_test.c src/store.c src/store.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/store_test.c src/store.c
 
-unit-test: tests/index_test tests/store_test
+unit-test: tests/index_test tests/store_test tests/query_test
 	./tests/index_test
 	./tests/store_test
+	./tests/query_test
 
 integration-test: cearch cearchd
 	sh tests/smoke.sh ./cearch
@@ -34,7 +38,7 @@ sanitize:
 	$(MAKE) test CFLAGS="-O1 -g -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -D_FILE_OFFSET_BITS=64 -fsanitize=address,undefined -fno-omit-frame-pointer" LDFLAGS="-fsanitize=address,undefined"
 
 analyze:
-	$(CC) $(CFLAGS) -fanalyzer -fsyntax-only src/cearch.c src/index.c src/store.c src/indexer.c src/daemon.c
+	$(CC) $(CFLAGS) -fanalyzer -fsyntax-only src/cearch.c src/index.c src/query.c src/store.c src/indexer.c src/daemon.c
 
 bench: cearch
 	sh tests/benchmark.sh ./cearch
@@ -48,4 +52,4 @@ install: cearch cearchd
 	install -Dm644 docs/TESTING.md $(DESTDIR)/usr/local/share/doc/cearch/TESTING.md
 
 clean:
-	rm -f cearch cearchd tests/index_test tests/store_test
+	rm -f cearch cearchd tests/index_test tests/store_test tests/query_test
