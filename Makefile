@@ -7,7 +7,7 @@ LDFLAGS ?=
 
 all: cearch cearchd
 
-cearch: src/cearch.c src/index.c src/store.c src/index.h src/store.c src/store.h
+cearch: src/cearch.c src/index.c src/index.h src/store.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c src/store.c
 
 cearchd: src/daemon.c src/index.c src/store.c src/protocol.h src/index.h src/store.h
