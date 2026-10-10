@@ -205,6 +205,7 @@ static void FreeDaemonIndex(CearchDaemon *Daemon) {
 
 static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
                        bool MatchPath, char **Output, size_t *OutputLength, uint32_t *Found) {
+    (void)fprintf(stderr, "cearchd-debug: query='%s' entries=%zu\\n", Query, Daemon->EntryCount);
     size_t Capacity = 4096U;
     char *Result = malloc(Capacity);
     if (!Result) return false;
@@ -224,6 +225,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         const char *Haystack = MatchPath ? Entry->Path : Base;
         if (UseTrigrams && !CearchNameCandidatePrepared(&Daemon->NameIndex, &Prepared, (uint32_t)Index)) continue;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
+        (void)fprintf(stderr, "cearchd-debug: match '%s'\\n", Entry->Path);
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
             CearchNameQueryFree(&Prepared);
