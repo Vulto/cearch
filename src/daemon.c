@@ -371,7 +371,7 @@ static void FreeDaemonIndex(CearchDaemon *Daemon) {
 
 
 static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
-                       bool MatchPath, char **Output, size_t *OutputLength, uint32_t *Found) {
+                       bool MatchPath, bool NullDelimited, char **Output, size_t *OutputLength, uint32_t *Found) {
     size_t Capacity = 4096U;
     char *Result = malloc(Capacity);
     if (!Result) return false;
@@ -425,7 +425,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         }
         memcpy(Result + Length, Entry->Path, PathLength);
         Length += PathLength;
-        Result[Length++] = '\n';
+        Result[Length++] = NullDelimited ? '\0' : '\n';
         ++Matches;
     }
 
@@ -436,7 +436,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
     return true;
 }
 
-static bool SearchContent(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
+static bool SearchContent(CearchDaemon *Daemon, const char *Query, uint32_t Limit, bool NullDelimited,
                           char **Output, size_t *OutputLength, uint32_t *Found) {
     size_t Capacity = 4096U;
     char *Result = malloc(Capacity);
@@ -471,7 +471,7 @@ static bool SearchContent(CearchDaemon *Daemon, const char *Query, uint32_t Limi
         }
         memcpy(Result + Length, Entry->Path, PathLength);
         Length += PathLength;
-        Result[Length++] = '\n';
+        Result[Length++] = NullDelimited ? '\0' : '\n';
         ++Matches;
     }
     *Output = Result;
@@ -502,10 +502,11 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
     switch (Request.Command) {
         case CearchCommandSearch:
             Success = SearchName(Daemon, Query, Limit, (Request.Flags & 1U) != 0U,
-                                 &Output, &OutputLength, &Found);
+                                 (Request.Flags & 2U) != 0U, &Output, &OutputLength, &Found);
             break;
         case CearchCommandContent:
-            Success = SearchContent(Daemon, Query, Limit, &Output, &OutputLength, &Found);
+            Success = SearchContent(Daemon, Query, Limit, (Request.Flags & 2U) != 0U,
+                                    &Output, &OutputLength, &Found);
             break;
         case CearchCommandStats: {
             char Buffer[128];
@@ -746,8 +747,8 @@ static void Usage(FILE *Stream) {
     fprintf(Stream,
         "Usage:\n"
         "  cearchd serve --db DB [--socket PATH]\n"
-        "  cearchd client [--socket PATH] search [--path] [--limit N] QUERY\n"
-        "  cearchd client [--socket PATH] content [--limit N] QUERY\n"
+        "  cearchd client [--socket PATH] search [--path] [--null] [--limit N] QUERY\n"
+        "  cearchd client [--socket PATH] content [--null] [--limit N] QUERY\n"
         "  cearchd client [--socket PATH] stats|ping|shutdown\n");
 }
 
@@ -807,6 +808,8 @@ int main(int Argc, char **Argv) {
 
         for (int Index = Start; Index < Argc; ++Index) {
             if (strcmp(Argv[Index], "--path") == 0 && Command == CearchCommandSearch) Flags |= 1U;
+            else if (strcmp(Argv[Index], "--null") == 0 &&
+                     (Command == CearchCommandSearch || Command == CearchCommandContent)) Flags |= 2U;
             else if (strcmp(Argv[Index], "--limit") == 0 && Index + 1 < Argc) {
                 if (!ParseNumber(Argv[++Index], &Limit) || !Limit || Limit > CearchMaximumResults) {
                     fprintf(stderr, "cearch: invalid limit\n");
