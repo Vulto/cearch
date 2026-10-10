@@ -5,18 +5,22 @@ LDFLAGS ?=
 
 .PHONY: all clean test install
 
-all: cearch
+all: cearch cearchd
 
 cearch: src/cearch.c src/index.c src/store.c src/index.h src/store.c src/store.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c src/store.c
 
-test: cearch
-	sh tests/smoke.sh ./cearch
+cearchd: src/daemon.c src/index.c src/store.c src/protocol.h src/index.h src/store.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/daemon.c src/index.c src/store.c
 
-install: cearch
+test: cearch cearchd
+	sh tests/smoke.sh ./cearch && sh tests/daemon.sh ./cearchd
+
+install: cearch cearchd
 	install -Dm755 cearch $(DESTDIR)/usr/local/bin/cearch
+	install -Dm755 cearchd $(DESTDIR)/usr/local/bin/cearchd
 	install -Dm644 docs/USAGE.md $(DESTDIR)/usr/local/share/doc/cearch/USAGE.md
 	install -Dm644 docs/ARCHITECTURE.md $(DESTDIR)/usr/local/share/doc/cearch/ARCHITECTURE.md
 
 clean:
-	rm -f cearch
+	rm -f cearch cearchd
