@@ -135,6 +135,8 @@ static const char *BaseName(const char *Path) {
     return Slash ? Slash + 1 : Path;
 }
 
+static bool PrintPath(const char *Path, bool NullDelimited);
+
 static bool SearchCommand(const char *Database, const char *Query, bool MatchPath, bool NullDelimited, size_t Limit) {
     FileTable Table = {0};
     CearchStore Store = { .Descriptor = -1 };
