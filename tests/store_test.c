@@ -132,6 +132,17 @@ int main(void) {
     ExpectRejected(Database);
 
     WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
+    Descriptor = open(Database, O_RDWR | O_CLOEXEC);
+    assert(Descriptor >= 0);
+    assert(pread(Descriptor, &Header, sizeof(Header), 0) == (ssize_t)sizeof(Header));
+    CearchTrigramPosting BadContentPosting = Trigrams[0];
+    BadContentPosting.Start = 1U;
+    assert(pwrite(Descriptor, &BadContentPosting, sizeof(BadContentPosting),
+                  (off_t)Header.ContentTrigramOffset) == (ssize_t)sizeof(BadContentPosting));
+    close(Descriptor);
+    ExpectRejected(Database);
+
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_WRONLY | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(ftruncate(Descriptor, 4) == 0);
