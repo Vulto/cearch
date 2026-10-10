@@ -6,7 +6,7 @@ cearch is a Linux-first, pure-C23, pipe-friendly file search utility. It separat
 
 ## Data-oriented storage
 
-The persistent baseline stores newline-delimited, escaped path records. The in-memory query representation is a compact set of records containing a path, basename range, size, modification time, device/inode identity, and file type. This baseline format is intentionally easy to inspect and recover; it is not presented as the final compact mmap format.
+The current persistent baseline is a versioned binary snapshot containing a native-layout header, fixed-size metadata records, and a NUL-terminated path string table. It is memory-mapped for validation and reading, then copied into heap entries for query processing. The format is not currently ABI- or endian-independent, and the current query path does not query directly from the mapping. The future target format below is not implemented.
 
 The target storage format is a versioned snapshot with:
 - a dense FileId table;
