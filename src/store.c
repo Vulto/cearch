@@ -192,7 +192,7 @@ void CearchStoreClose(CearchStore *Store) {
 const char *CearchStorePath(const CearchStore *Store, size_t EntryIndex) {
     if (!Store || EntryIndex >= Store->EntryCount) return nullptr;
     const CearchDiskEntry *Entry = &Store->Entries[EntryIndex];
-    if ((uint64_t)Entry->PathOffset + Entry->PathLength > Store->StringsSize) return nullptr;
+    if ((uint64_t)Entry->PathOffset + Entry->PathLength >= Store->StringsSize) return nullptr;
     if (Store->Strings[Entry->PathOffset + Entry->PathLength] != '\0') return nullptr;
     return Store->Strings + Entry->PathOffset;
 }
