@@ -28,14 +28,13 @@ Without explicit roots, the daemon is read-only and does not infer root ownershi
 
 ## Query semantics and planned grammar
 
-Name queries now support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, `NOT`, `AND`, `OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans. Planned grammar extensions may add:
+Name queries now support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, `NOT`, `AND`, `OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans. Planned grammar extensions may add:
 
-- `ext:c`, `type:file`, `type:dir`;
-- `size:>10mb`, `mtime:<7d`, `path:/home/me`, and `in:/some/root`;
+- regex and fuzzy-ranking modes;
 - fuzzy and regex modes;
 - boolean `AND`, `OR`, `NOT`, parentheses, and exclusion terms.
 
-Metadata filters, fuzzy ranking, and regex remain unimplemented. The query parser rejects malformed expressions rather than silently reinterpreting them.
+Fuzzy ranking and regex remain unimplemented. The query parser rejects malformed expressions rather than silently reinterpreting them.
 
 ## Next architecture stages
 
