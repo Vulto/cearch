@@ -151,22 +151,24 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
         return false;
     }
 
-    size_t Found = 0U;
-    size_t QueryLength = strlen(Query);
-    bool UseTrigrams = QueryLength >= 3U && !MatchPath;
     CearchNameQuery Prepared = {0};
-    if (UseTrigrams && !CearchNameQueryPrepare(Query, &Prepared)) {
+    CearchNameCandidateIterator Iterator = {0};
+    if (!CearchNameQueryPrepare(Query, &Prepared) ||
+        !CearchNameCandidatesBegin(&Index, &Prepared, &Iterator)) {
+        CearchNameQueryFree(&Prepared);
         CearchFreeNameIndex(&Index);
         FreeTable(&Table);
         CearchStoreClose(&Store);
         return false;
     }
 
-    for (size_t EntryIndex = 0U; EntryIndex < Table.Count; ++EntryIndex) {
+    size_t Found = 0U;
+    uint32_t FileId = 0U;
+    while (Found < Limit && CearchNameCandidatesNext(&Iterator, &FileId)) {
+        size_t EntryIndex = (size_t)FileId;
+        if (EntryIndex >= Table.Count) continue;
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
-        if (UseTrigrams &&
-            !CearchNameCandidatePrepared(&Index, &Prepared, (uint32_t)EntryIndex)) continue;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
         if (puts(Entry->Path) == EOF) {
             CearchNameQueryFree(&Prepared);
@@ -175,7 +177,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
             CearchStoreClose(&Store);
             return false;
         }
-        if (++Found >= Limit) break;
+        ++Found;
     }
 
     CearchNameQueryFree(&Prepared);
