@@ -1,16 +1,40 @@
-# Cearch CI: compile and execute integration tests
-name: C23
+name: Cearch CI
+
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  test:
+    name: Build and test (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc clang
+      - name: Build with warnings as errors
+        run: make clean all CC=${{ matrix.compiler }} CFLAGS="-O2 -pipe -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -D_FILE_OFFSET_BITS=64"
+      - name: Unit and integration tests
+        run: make test CC=${{ matrix.compiler }} CFLAGS="-O2 -pipe -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -D_FILE_OFFSET_BITS=64"
+
+  sanitizer:
+    name: AddressSanitizer and UndefinedBehaviorSanitizer
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc
-      - name: Build
-        run: make CC=gcc
-      - name: Test
-        run: make test CC=gcc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+      - name: Run instrumented test suite
+        run: make sanitize CC=gcc
