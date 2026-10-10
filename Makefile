@@ -7,8 +7,8 @@ LDFLAGS ?=
 
 all: cearch
 
-cearch: src/cearch.c src/index.c src/index.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c
+cearch: src/cearch.c src/index.c src/store.c src/index.h src/store.c src/store.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/cearch.c src/index.c src/store.c
 
 test: cearch
 	sh tests/smoke.sh ./cearch

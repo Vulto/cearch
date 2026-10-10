@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "index.h"
+#include "store.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -159,23 +160,6 @@ static bool WalkPath(FileTable *Table, const char *Path) {
     return true;
 }
 
-static bool WriteEntry(FILE *Stream, const FileEntry *Entry) {
-    if (fprintf(Stream, "E\t%c\t%" PRIu64 "\t%" PRId64 "\t%" PRIu64 "\t%" PRIu64 "\t",
-                Entry->Type, Entry->Size, Entry->Mtime, Entry->Device, Entry->Inode) < 0) return false;
-    for (const unsigned char *Cursor = (const unsigned char *)Entry->Path; *Cursor; ++Cursor) {
-        if (*Cursor == '\\') {
-            if (fputs("\\\\", Stream) == EOF) return false;
-        } else if (*Cursor == '\t') {
-            if (fputs("\\t", Stream) == EOF) return false;
-        } else if (*Cursor == '\n') {
-            if (fputs("\\n", Stream) == EOF) return false;
-        } else if (*Cursor == '\r') {
-            if (fputs("\\r", Stream) == EOF) return false;
-        } else if (fputc(*Cursor, Stream) == EOF) return false;
-    }
-    return fputc('\n', Stream) != EOF;
-}
-
 static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     if (RootCount <= 0) {
         fprintf(stderr, "cearch: index requires at least one ROOT\n");
@@ -189,189 +173,99 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
         }
     }
 
-    size_t DatabaseLength = strlen(Database);
-    if (DatabaseLength > SIZE_MAX - 48U) {
-        FreeTable(&Table);
-        return false;
-    }
-    size_t TempLength = DatabaseLength + 48U;
-    char *Temporary = malloc(TempLength);
-    if (!Temporary) {
-        FreeTable(&Table);
-        return false;
-    }
-    snprintf(Temporary, TempLength, "%s.tmp.%ld", Database, (long)getpid());
-    FILE *Stream = fopen(Temporary, "wx");
-    if (!Stream) {
-        fprintf(stderr, "cearch: cannot create %s: %s\n", Temporary, strerror(errno));
-        free(Temporary);
+    if (Table.Count > UINT32_MAX) {
+        fprintf(stderr, "cearch: this snapshot format supports at most UINT32_MAX entries\n");
         FreeTable(&Table);
         return false;
     }
 
-    bool Success = fprintf(Stream, "CEARCH\t%u\n", CearchVersion) >= 0;
-    for (size_t Index = 0; Success && Index < Table.Count; ++Index)
-        Success = WriteEntry(Stream, &Table.Entries[Index]);
-    if (Success && fflush(Stream) != 0) Success = false;
-    if (Success && fsync(fileno(Stream)) != 0) Success = false;
-    int SavedErrno = errno;
-    if (fclose(Stream) != 0) {
-        Success = false;
-        SavedErrno = errno;
+    size_t StringsSize = 0;
+    for (size_t Index = 0; Index < Table.Count; ++Index) {
+        size_t Length = strlen(Table.Entries[Index].Path);
+        if (Length > UINT32_MAX || StringsSize > UINT32_MAX - Length - 1U) {
+            fprintf(stderr, "cearch: path string table exceeds 4 GiB\n");
+            FreeTable(&Table);
+            return false;
+        }
+        StringsSize += Length + 1U;
     }
-    if (Success && rename(Temporary, Database) != 0) {
-        Success = false;
-        SavedErrno = errno;
+    char *Strings = malloc(StringsSize ? StringsSize : 1U);
+    CearchDiskEntry *Entries = calloc(Table.Count ? Table.Count : 1U, sizeof(*Entries));
+    if (!Strings || !Entries) {
+        fprintf(stderr, "cearch: out of memory creating snapshot\n");
+        free(Strings);
+        free(Entries);
+        FreeTable(&Table);
+        return false;
     }
-    if (!Success) {
-        fprintf(stderr, "cearch: failed writing database %s: %s\n", Database, strerror(SavedErrno));
-        unlink(Temporary);
-    } else {
+
+    size_t StringOffset = 0;
+    for (size_t Index = 0; Index < Table.Count; ++Index) {
+        FileEntry *Source = &Table.Entries[Index];
+        size_t Length = strlen(Source->Path);
+        Entries[Index] = (CearchDiskEntry){
+            .PathOffset = (uint32_t)StringOffset,
+            .PathLength = (uint32_t)Length,
+            .Size = Source->Size,
+            .Mtime = Source->Mtime,
+            .Device = Source->Device,
+            .Inode = Source->Inode,
+            .Type = Source->Type == 'f' ? 1U : Source->Type == 'd' ? 2U : 3U
+        };
+        memcpy(Strings + StringOffset, Source->Path, Length + 1U);
+        StringOffset += Length + 1U;
+    }
+
+    bool Success = CearchStoreWrite(Database, Entries, Table.Count, Strings, StringsSize);
+    if (!Success)
+        fprintf(stderr, "cearch: failed writing snapshot %s: %s\n", Database, strerror(errno));
+    else
         fprintf(stderr, "cearch: indexed %zu entries into %s\n", Table.Count, Database);
-    }
 
-    free(Temporary);
+    free(Strings);
+    free(Entries);
     FreeTable(&Table);
     return Success;
 }
 
-static char *DecodePath(const char *Text) {
-    size_t Length = strlen(Text);
-    char *Path = malloc(Length + 1U);
-    if (!Path) return nullptr;
-    size_t Out = 0;
-    for (size_t Index = 0; Index < Length; ++Index) {
-        if (Text[Index] == '\\' && Index + 1U < Length) {
-            ++Index;
-            if (Text[Index] == 't') Path[Out++] = '\t';
-            else if (Text[Index] == 'n') Path[Out++] = '\n';
-            else if (Text[Index] == 'r') Path[Out++] = '\r';
-            else if (Text[Index] == '\\') Path[Out++] = '\\';
-            else {
-                Path[Out++] = '\\';
-                Path[Out++] = Text[Index];
-            }
-        } else {
-            Path[Out++] = Text[Index];
-        }
-    }
-    Path[Out] = '\0';
-    return Path;
-}
-
-static bool ParseFieldUnsigned(const char *Text, uint64_t *Value) {
-    if (!Text || !*Text || *Text == '-') return false;
-    errno = 0;
-    char *End = nullptr;
-    unsigned long long Parsed = strtoull(Text, &End, 10);
-    if (errno || !End || *End) return false;
-    *Value = (uint64_t)Parsed;
-    return true;
-}
-
-static bool ParseFieldSigned(const char *Text, int64_t *Value) {
-    if (!Text || !*Text) return false;
-    errno = 0;
-    char *End = nullptr;
-    long long Parsed = strtoll(Text, &End, 10);
-    if (errno || !End || *End) return false;
-    *Value = (int64_t)Parsed;
-    return true;
-}
-
 static bool LoadDatabase(const char *Database, FileTable *Table) {
-    FILE *Stream = fopen(Database, "r");
-    if (!Stream) {
-        fprintf(stderr, "cearch: cannot open database %s: %s\n", Database, strerror(errno));
+    CearchStore Store = { .Descriptor = -1 };
+    if (!CearchStoreOpen(Database, &Store)) {
+        fprintf(stderr, "cearch: cannot open or validate snapshot %s: %s\n", Database, strerror(errno));
         return false;
     }
-    char *Line = nullptr;
-    size_t LineCapacity = 0;
-    ssize_t LineLength = getline(&Line, &LineCapacity, Stream);
-    if (LineLength < 0) {
-        fprintf(stderr, "cearch: empty database %s\n", Database);
-        free(Line);
-        fclose(Stream);
+    if (Store.EntryCount > SIZE_MAX / sizeof(*Table->Entries) ||
+        !ReserveEntries(Table, Store.EntryCount)) {
+        fprintf(stderr, "cearch: out of memory loading snapshot\n");
+        CearchStoreClose(&Store);
         return false;
     }
-    unsigned Version = 0;
-    char Extra = 0;
-    if (sscanf(Line, "CEARCH\t%u%c", &Version, &Extra) < 1 || Version != CearchVersion ||
-        !strchr(Line, '\n')) {
-        fprintf(stderr, "cearch: unsupported database format\n");
-        free(Line);
-        fclose(Stream);
-        return false;
-    }
-
-    bool Success = true;
-    while ((LineLength = getline(&Line, &LineCapacity, Stream)) >= 0) {
-        if ((size_t)LineLength > CearchMaxLine) {
-            fprintf(stderr, "cearch: database record exceeds limit\n");
-            Success = false;
-            break;
+    for (size_t Index = 0; Index < Store.EntryCount; ++Index) {
+        const CearchDiskEntry *Source = &Store.Entries[Index];
+        const char *Path = CearchStorePath(&Store, Index);
+        if (!Path) {
+            fprintf(stderr, "cearch: invalid path offset in snapshot\n");
+            CearchStoreClose(&Store);
+            FreeTable(Table);
+            return false;
         }
-        if (LineLength == 0 || Line[LineLength - 1] != '\n') {
-            fprintf(stderr, "cearch: truncated database record\n");
-            Success = false;
-            break;
-        }
-        Line[--LineLength] = '\0';
-        char *Fields[7] = {0};
-        char *Cursor = Line;
-        for (size_t Field = 0; Field < 7U; ++Field) {
-            Fields[Field] = Cursor;
-            char *Tab = strchr(Cursor, '\t');
-            if (Field < 6U) {
-                if (!Tab) {
-                    Success = false;
-                    break;
-                }
-                *Tab = '\0';
-                Cursor = Tab + 1;
-            } else if (Tab) {
-                Success = false;
-                break;
-            }
-        }
-        if (!Success || strcmp(Fields[0], "E") != 0 ||
-            strlen(Fields[1]) != 1U ||
-            (Fields[1][0] != 'f' && Fields[1][0] != 'd' && Fields[1][0] != 'o')) {
-            fprintf(stderr, "cearch: malformed database record\n");
-            Success = false;
-            break;
-        }
-
-        uint64_t Size = 0, Device = 0, Inode = 0;
-        int64_t Mtime = 0;
-        if (!ParseFieldUnsigned(Fields[2], &Size) ||
-            !ParseFieldSigned(Fields[3], &Mtime) ||
-            !ParseFieldUnsigned(Fields[4], &Device) ||
-            !ParseFieldUnsigned(Fields[5], &Inode)) {
-            fprintf(stderr, "cearch: malformed numeric metadata\n");
-            Success = false;
-            break;
-        }
-
-        char *Path = DecodePath(Cursor);
-        if (!Path || !*Path || !ReserveEntries(Table, Table->Count + 1U)) {
-            free(Path);
-            Success = false;
-            break;
+        char *Copy = strdup(Path);
+        if (!Copy) {
+            CearchStoreClose(&Store);
+            FreeTable(Table);
+            return false;
         }
         Table->Entries[Table->Count++] = (FileEntry){
-            .Path = Path, .Size = Size, .Mtime = Mtime, .Device = Device, .Inode = Inode,
-            .Type = Fields[1][0]
+            .Path = Copy,
+            .Size = Source->Size,
+            .Mtime = Source->Mtime,
+            .Device = Source->Device,
+            .Inode = Source->Inode,
+            .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o'
         };
     }
-    if (ferror(Stream)) Success = false;
-    free(Line);
-    fclose(Stream);
-    if (!Success) {
-        fprintf(stderr, "cearch: invalid or unreadable database %s\n", Database);
-        FreeTable(Table);
-    }
-    return Success;
+    CearchStoreClose(&Store);
+    return true;
 }
 
 static bool ContainsCaseInsensitive(const char *Haystack, const char *Needle) {
