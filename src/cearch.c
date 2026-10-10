@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "index.h"
 #include "store.h"
+#include "indexer.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -165,67 +166,7 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
         fprintf(stderr, "cearch: index requires at least one ROOT\n");
         return false;
     }
-    FileTable Table = {0};
-    for (int Index = 0; Index < RootCount; ++Index) {
-        if (!WalkPath(&Table, Roots[Index])) {
-            FreeTable(&Table);
-            return false;
-        }
-    }
-
-    if (Table.Count > UINT32_MAX) {
-        fprintf(stderr, "cearch: this snapshot format supports at most UINT32_MAX entries\n");
-        FreeTable(&Table);
-        return false;
-    }
-
-    size_t StringsSize = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
-        size_t Length = strlen(Table.Entries[Index].Path);
-        if (Length > UINT32_MAX || StringsSize > UINT32_MAX - Length - 1U) {
-            fprintf(stderr, "cearch: path string table exceeds 4 GiB\n");
-            FreeTable(&Table);
-            return false;
-        }
-        StringsSize += Length + 1U;
-    }
-    char *Strings = malloc(StringsSize ? StringsSize : 1U);
-    CearchDiskEntry *Entries = calloc(Table.Count ? Table.Count : 1U, sizeof(*Entries));
-    if (!Strings || !Entries) {
-        fprintf(stderr, "cearch: out of memory creating snapshot\n");
-        free(Strings);
-        free(Entries);
-        FreeTable(&Table);
-        return false;
-    }
-
-    size_t StringOffset = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
-        FileEntry *Source = &Table.Entries[Index];
-        size_t Length = strlen(Source->Path);
-        Entries[Index] = (CearchDiskEntry){
-            .PathOffset = (uint32_t)StringOffset,
-            .PathLength = (uint32_t)Length,
-            .Size = Source->Size,
-            .Mtime = Source->Mtime,
-            .Device = Source->Device,
-            .Inode = Source->Inode,
-            .Type = Source->Type == 'f' ? 1U : Source->Type == 'd' ? 2U : 3U
-        };
-        memcpy(Strings + StringOffset, Source->Path, Length + 1U);
-        StringOffset += Length + 1U;
-    }
-
-    bool Success = CearchStoreWrite(Database, Entries, Table.Count, Strings, StringsSize);
-    if (!Success)
-        fprintf(stderr, "cearch: failed writing snapshot %s: %s\n", Database, strerror(errno));
-    else
-        fprintf(stderr, "cearch: indexed %zu entries into %s\n", Table.Count, Database);
-
-    free(Strings);
-    free(Entries);
-    FreeTable(&Table);
-    return Success;
+    return CearchBuildSnapshot(Database, (const char *const *)Roots, (size_t)RootCount, nullptr);
 }
 
 static bool LoadDatabase(const char *Database, FileTable *Table) {
