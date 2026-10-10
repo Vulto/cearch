@@ -16,7 +16,7 @@ cearch content --db DB [--limit N] QUERY
 cearch stats --db DB
 ```
 
-The indexer recursively walks each root without following directory symlinks. Hidden files are included. Traversal failures fail the indexing operation so an incomplete scan is not silently presented as a complete snapshot. The snapshot is replaced atomically after the scan and write complete.
+The indexer recursively walks each root without following directory symlinks. Hidden files are included. Traversal failures fail the indexing operation so an incomplete scan is not silently presented as a complete snapshot. The snapshot is written to a temporary file, synced, atomically renamed into place, and the containing directory is synced before indexing reports success.
 
 Name search matches case-insensitively against the basename by default. Use `--path` to match the full path. Short queries use a scan; longer queries use trigram postings to reduce candidate verification. Results are newline-delimited paths, so names containing literal newlines are ambiguous in this output format.
 
