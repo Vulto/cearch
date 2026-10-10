@@ -30,9 +30,9 @@ typedef struct {
     CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
-    CearchTrigramPosting *Trigrams;
+    const CearchTrigramPosting *Trigrams;
     size_t TrigramCount;
-    uint32_t *TrigramFileIds;
+    const uint32_t *TrigramFileIds;
     size_t TrigramPostingCount;
     bool OwnsNameIndex;
 } CearchIndex;
