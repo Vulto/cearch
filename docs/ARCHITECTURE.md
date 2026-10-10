@@ -18,7 +18,7 @@ The snapshot stores sorted trigram metadata, delta-coded numeric file IDs, and s
 
 ## Daemon and protocol
 
-`cearchd` serves bounded, versioned request/response messages over a Unix-domain stream socket. The socket is owner-only, and clients cannot send arbitrary path offsets or pointers. Accepted clients run in detached worker threads, capped at 64 active clients, with 10-second socket I/O timeouts. A read/write lock allows concurrent readers while reconciliation swaps the mapped snapshot. Concurrent requests and partial-request isolation are tested; saturation, shutdown-under-load, and cancellation still need stress testing.
+`cearchd` serves bounded, versioned request/response messages over a Unix-domain stream socket. The socket is owner-only, and clients cannot send arbitrary path offsets or pointers. Accepted clients run in detached worker threads, capped at 64 active clients, with 10-second socket I/O timeouts. A read/write lock allows concurrent readers while reconciliation swaps the mapped snapshot. The lock is acquired after the full request payload is received, so a stalled partial request does not block reconciliation. Concurrent requests and this isolation behavior are tested; saturation, shutdown-under-load, and cancellation still need stress testing.
 
 ## Filesystem reconciliation
 
