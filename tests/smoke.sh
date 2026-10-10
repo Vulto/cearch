@@ -13,7 +13,54 @@ mkdir -p "$TempDir/root/folder"
 
 "$Program" index --db "$TempDir/dbdir/index.db" "$TempDir/root"
 "$Program" stats --db "$TempDir/dbdir/index.db" > "$TempDir/stats"
-grep -q '^files: 3$' "$TempDir/stats"
+grep -q '^files: 3
+grep -q '^directories: 3
+
+"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
+grep -q '/needle.txt$' "$TempDir/name"
+
+"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
+grep -q '/sub/readme.md$' "$TempDir/path"
+
+"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
+grep -q '/sub/readme.md$' "$TempDir/content"
+
+"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
+test ! -s "$TempDir/missing"
+
+echo 'cearch smoke tests passed'
+ "$TempDir/stats"
+grep -q '^directories: 2$' "$TempDir/stats"
+
+"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
+grep -q '/needle.txt$' "$TempDir/name"
+
+"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
+grep -q '/sub/readme.md$' "$TempDir/path"
+
+"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
+grep -q '/sub/readme.md$' "$TempDir/content"
+
+"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
+test ! -s "$TempDir/missing"
+
+echo 'cearch smoke tests passed'
+ "$TempDir/stats"
+
+"$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
+grep -q '/needle.txt$' "$TempDir/name"
+
+"$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
+grep -q '/sub/readme.md$' "$TempDir/path"
+
+"$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
+grep -q '/sub/readme.md$' "$TempDir/content"
+
+"$Program" search --db "$TempDir/dbdir/index.db" absent > "$TempDir/missing"
+test ! -s "$TempDir/missing"
+
+echo 'cearch smoke tests passed'
+ "$TempDir/stats"
 grep -q '^directories: 2$' "$TempDir/stats"
 
 "$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
