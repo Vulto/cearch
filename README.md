@@ -9,6 +9,7 @@ Requirements: Linux, GCC or Clang with C2x support, and Make.
 ```sh
 make
 make test
+make bench # optional generated-workload benchmark
 ```
 
 ## Quick start
