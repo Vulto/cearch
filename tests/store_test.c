@@ -67,7 +67,7 @@ int main(void) {
     };
     const unsigned char PostingData[] = { 0U };
     const CearchPostingSkip Skips[] = {
-        { .PostingIndex = 0U, .Ordinal = 0U, .ByteOffset = 0U, .FileId = 0U, .Reserved = 0U }
+        { .PostingIndex = 0U, .Ordinal = 0U, .ByteOffset = 1U, .FileId = 0U, .Reserved = 0U }
     };
     WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData,
                        sizeof(PostingData), Skips, 1U, 1U);
