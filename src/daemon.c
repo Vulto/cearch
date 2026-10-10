@@ -361,6 +361,28 @@ static void FreeDaemonIndex(CearchDaemon *Daemon) {
 }
 
 
+static bool AppendResultPath(char **Result, size_t *Length, size_t *Capacity,
+                             const char *Path, bool NullDelimited) {
+    size_t PathLength = strlen(Path);
+    if (PathLength > SIZE_MAX - *Length - 1U) return false;
+    size_t Needed = *Length + PathLength + 1U;
+    if (Needed > *Capacity) {
+        size_t Next = *Capacity;
+        while (Next < Needed) {
+            if (Next > SIZE_MAX / 2U) return false;
+            Next *= 2U;
+        }
+        char *NewResult = realloc(*Result, Next);
+        if (!NewResult) return false;
+        *Result = NewResult;
+        *Capacity = Next;
+    }
+    memcpy(*Result + *Length, Path, PathLength);
+    *Length += PathLength;
+    (*Result)[(*Length)++] = NullDelimited ? '\0' : '\n';
+    return true;
+}
+
 static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
                        bool MatchPath, bool NullDelimited, char **Output, size_t *OutputLength, uint32_t *Found) {
     size_t Capacity = 4096U;
@@ -386,6 +408,44 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         return false;
     }
 
+    if (CearchQueryHasFuzzy(&ParsedQuery)) {
+        size_t CapacityHits = Daemon->EntryCount < (size_t)Limit
+            ? Daemon->EntryCount : (size_t)Limit;
+        CearchQueryHit *Hits = CapacityHits ? calloc(CapacityHits, sizeof(*Hits)) : NULL;
+        if (CapacityHits && !Hits) {
+            CearchQueryFree(&ParsedQuery);
+            CearchNameQueryFree(&Prepared);
+            free(Result);
+            return false;
+        }
+        size_t HitCount = 0U;
+        for (size_t EntryIndex = 0U; EntryIndex < Daemon->EntryCount; ++EntryIndex) {
+            const CearchFileEntry *Entry = &Daemon->Entries[EntryIndex];
+            const char *Base = strrchr(Entry->Path, '/');
+            Base = Base ? Base + 1 : Entry->Path;
+            const char *Haystack = MatchPath ? Entry->Path : Base;
+            uint32_t Score = 0U;
+            if (CearchQueryScoreEntry(&ParsedQuery, Entry, Haystack, &Score))
+                CearchQueryHitConsider(Hits, &HitCount, CapacityHits, Entry->Path, Score);
+        }
+        if (HitCount > 1U) qsort(Hits, HitCount, sizeof(*Hits), CearchQueryHitCompare);
+        bool Success = true;
+        for (size_t HitIndex = 0U; HitIndex < HitCount; ++HitIndex) {
+            if (!AppendResultPath(&Result, &Length, &Capacity, Hits[HitIndex].Path, NullDelimited)) {
+                Success = false;
+                break;
+            }
+        }
+        free(Hits);
+        CearchQueryFree(&ParsedQuery);
+        CearchNameQueryFree(&Prepared);
+        if (!Success) { free(Result); return false; }
+        *Output = Result;
+        *OutputLength = Length;
+        *Found = (uint32_t)HitCount;
+        return true;
+    }
+
     size_t ScanIndex = 0U;
     uint32_t FileId = 0U;
     while (Matches < Limit) {
@@ -404,38 +464,12 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         const char *Haystack = MatchPath ? Entry->Path : Base;
         if (!CearchQueryMatchesEntry(&ParsedQuery, Entry, Haystack)) continue;
 
-        size_t PathLength = strlen(Entry->Path);
-        if (PathLength > SIZE_MAX - Length - 1U) {
+        if (!AppendResultPath(&Result, &Length, &Capacity, Entry->Path, NullDelimited)) {
             CearchQueryFree(&ParsedQuery);
             CearchNameQueryFree(&Prepared);
             free(Result);
             return false;
         }
-        size_t Needed = Length + PathLength + 1U;
-        if (Needed > Capacity) {
-            size_t Next = Capacity;
-            while (Next < Needed) {
-                if (Next > SIZE_MAX / 2U) {
-                    CearchQueryFree(&ParsedQuery);
-                    CearchNameQueryFree(&Prepared);
-                    free(Result);
-                    return false;
-                }
-                Next *= 2U;
-            }
-            char *NewResult = realloc(Result, Next);
-            if (!NewResult) {
-                CearchQueryFree(&ParsedQuery);
-                CearchNameQueryFree(&Prepared);
-                free(Result);
-                return false;
-            }
-            Result = NewResult;
-            Capacity = Next;
-        }
-        memcpy(Result + Length, Entry->Path, PathLength);
-        Length += PathLength;
-        Result[Length++] = NullDelimited ? '\0' : '\n';
         ++Matches;
     }
 
