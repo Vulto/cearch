@@ -2,51 +2,49 @@
 
 ## Goals
 
-cearch is a Linux-first, pure-C23, pipe-friendly file search utility. It separates file metadata from query logic and uses numeric IDs for index references. The first release establishes the data model and correctness rules before adding daemon concurrency and advanced indexes.
+cearch is a Linux-first, pure-C23, pipe-friendly file index and search utility. The data model uses dense file IDs and compact posting lists where they reduce candidate work. The repository intentionally has no required database engine or GUI dependency.
 
-## Data-oriented storage
+## Current snapshot
 
-The current persistent baseline is a versioned binary snapshot containing a native-layout header, fixed-size metadata records, and a NUL-terminated path string table. It is memory-mapped for validation and reading, then copied into heap entries for query processing. The format is not currently ABI- or endian-independent, and the current query path does not query directly from the mapping. The future target format below is not implemented.
+The current binary snapshot contains a versioned native-layout header, fixed-size metadata records, and a NUL-terminated path string table. It is written through a temporary file, synced, and atomically renamed. Readers validate header sizes, offsets, record types, string bounds, terminators, and embedded NUL bytes before exposing entries. The format is currently host-endian/native-layout and is not promised to be portable between different ABIs or architectures.
 
-The target storage format is a versioned snapshot with:
-- a dense FileId table;
-- a shared path/name string blob;
-- parent IDs and name offsets;
-- sorted trigram -> FileId posting lists, delta-encoded;
-- metadata columns and a journal;
-- atomic snapshots plus append-only deltas.
+The shared `CearchBuildSnapshot` path is used by the CLI index command and daemon reconciliation, keeping the traversal and serialization policy consistent. Failed scans do not replace the previous snapshot. The daemon mmaps the snapshot and references paths in the mapped string table; its metadata records are represented by compact in-memory entries.
 
-Full paths should eventually be reconstructed from parent/name data so sibling paths do not repeatedly store the same prefix.
+## Name search
 
-## Search
+For query strings at least three bytes long, cearch produces unique ASCII-lowercased byte trigrams, finds postings, and uses posting membership to reject candidates before literal case-insensitive verification. Short queries use a scan. The index stores postings for all indexed paths, so basename matches remain candidates; the original query always verifies the final result.
 
-For names at least three bytes long, generate unique, lowercase byte trigrams from the query. Intersect candidate postings beginning with the shortest posting list, then verify the original query against candidate names/paths. Short queries fall back to a bounded scan because they provide too little trigram selectivity. Fuzzy ranking must be applied after candidate reduction, not across the whole filesystem.
+The one-shot CLI loads snapshot entries and rebuilds the in-memory trigram index per invocation. The daemon builds it once at startup and retains it across client requests. Trigram postings are not yet persisted in the snapshot, and the in-memory builder currently sorts temporary key/file-ID pairs at startup. The content index is also not persistent: content queries read the current contents of indexed regular files.
 
-The first baseline uses a compact sorted record collection and substring verification. The target trigram posting index can be added without changing CLI semantics.
+## Daemon and protocol
 
-## Content correctness
+`cearchd` serves bounded, versioned request/response messages over a Unix-domain stream socket. The socket is owner-only, and clients cannot send arbitrary path offsets or pointers. The daemon supports name search, content search, stats, ping, and shutdown. It is currently a single-threaded foreground process; a long-running content search can delay subsequent clients. Multi-client concurrency and load testing remain future work.
 
-Content search reads current file bytes and checks them before reporting matches. A persistent content index, when introduced, will be a candidate generator only: metadata validation and a fresh read verify hits. Binary files and unreadable files are skipped by default, with errors optionally reported to stderr.
+## Filesystem reconciliation
 
-## Watcher correctness
+When started with `--root ROOT` arguments, the daemon adds recursive inotify watches. Events do not directly mutate metadata; they mark the snapshot dirty and trigger a full rescan. Queue overflow also marks the index dirty. A periodic full reconciliation every 30 seconds is the correctness backstop for events missed during watch setup/reset. A successful rebuild atomically replaces the file and the daemon swaps to a freshly loaded mapping/index. If the scan or reload fails, the current in-memory snapshot remains in service.
 
-inotify is not a lossless journal: queues can overflow, watches are not inherently recursive, and changes can race with watch installation. Events only mark entries/roots dirty and accelerate re-indexing. An overflow marks affected roots dirty and triggers reconciliation. Periodic or on-demand reconciliation remains the correctness backstop.
+Without explicit roots, the daemon is read-only and does not infer root ownership from indexed paths.
 
-## Daemon target
+## Current query semantics and planned grammar
 
-The planned daemon owns the current index and serves bounded binary requests over a Unix-domain socket. The protocol must validate all lengths, enforce per-client limits, and avoid trusting paths or offsets received from clients. Systemd user units and OpenRC examples will be optional packaging aids. The first release is a one-shot CLI so it can be compiled and tested without a service manager.
+Implemented commands perform case-insensitive substring matching for names and literal, case-sensitive substring matching for content. The planned grammar may add:
 
-## Query language target
+- `ext:c`, `type:file`, `type:dir`;
+- `size:>10mb`, `mtime:<7d`, `path:/home/me`, and `in:/some/root`;
+- exact, prefix, suffix, fuzzy, and regex modes;
+- boolean `AND`, `OR`, `NOT`, parentheses, and exclusion terms.
 
-Future grammar:
+These query-language features are not implemented yet. A future parser must build a validated query AST and reject malformed expressions rather than silently reinterpreting them.
 
-- `ext:c`, `type:file`, `type:dir`
-- `size:>10mb`, `mtime:<7d`, `path:/home/me`
-- `in:/some/root`, `exact:`, `prefix:`, `suffix:`, `fuzzy:`, `regex:`
-- Boolean `AND`, `OR`, `NOT`, parentheses, and exclusion terms.
+## Next architecture stages
 
-Parsing must reject malformed expressions rather than silently changing their meaning.
+1. Persist sorted trigram postings in the snapshot and query directly from mmap without reconstructing a full heap index.
+2. Compress posting lists with delta-coded numeric file IDs and compact parent/name records to avoid full path duplication.
+3. Introduce an append-only update journal and periodic snapshot compaction, while keeping full reconciliation as a correctness fallback.
+4. Add a persistent content candidate index, always verifying current contents before reporting hits.
+5. Add bounded multi-client concurrency, query cancellation, protocol fuzzing, and repeatable performance benchmarks.
 
-## Non-goals for the baseline
+## Non-goals
 
-No GUI, terminal UI dependency, root requirement, kernel module, or mandatory database engine. Performance claims require repeatable benchmark results on recorded hardware and datasets.
+No GUI, terminal UI dependency, root requirement, kernel module, or mandatory third-party database. Performance claims require recorded hardware, a reproducible dataset, warm/cold cache context, and benchmark results.
