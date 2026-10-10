@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -154,8 +155,10 @@ bool CearchStoreOpen(const char *Database, CearchStore *Store) {
         const char *Strings = (const char *)Mapping + Header->StringOffset;
         for (size_t Index = 0; Index < (size_t)Header->EntryCount; ++Index) {
             const CearchDiskEntry *Entry = &Entries[Index];
-            if ((uint64_t)Entry->PathOffset + Entry->PathLength > Header->StringSize ||
-                Entry->PathLength == 0U || Entry->Type < 1U || Entry->Type > 3U) {
+            uint64_t PathEnd = (uint64_t)Entry->PathOffset + Entry->PathLength;
+            if (Entry->PathLength == 0U || PathEnd >= Header->StringSize ||
+                Entry->Type < 1U || Entry->Type > 3U ||
+                Strings[PathEnd] != '\\0') {
                 Valid = false;
                 break;
             }
