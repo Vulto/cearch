@@ -14,7 +14,7 @@ CI compiles with GCC and Clang, promotes warnings to errors, and runs unit and i
 ## Test layers
 
 - **Unit tests:** isolated index candidate generation and snapshot store read/write/rejection behavior.
-- **Integration tests:** CLI behavior over a temporary filesystem and generated database.
+- **Integration tests:** CLI behavior over a temporary filesystem, content-index fallback, concurrent daemon clients, and a partial-request client that must not block ping.
 - **Sanitizers:** detect supported classes of memory-safety and undefined-behavior defects on exercised paths.
 - **Static analysis:** GCC `-fanalyzer` diagnostics over production translation units.
 
@@ -29,4 +29,4 @@ CI compiles with GCC and Clang, promotes warnings to errors, and runs unit and i
 
 ## Current coverage gaps
 
-Dedicated tests are still needed for newline-containing paths and an alternative output encoding; overlapping roots; root and child symlink policy; unreadable files and directories; traversal error reporting; zero-length content queries; binary-file policy; content matches split across read boundaries; read failures; write/rename/fsync failures; malformed header fields and path offsets; stale temporary files; and large-index performance. Track these as follow-up work rather than implying they are covered.
+Dedicated tests are still needed for overlapping roots; root and child symlink policy; unreadable files and directories; traversal error reporting; binary-file policy and chunk boundaries; read failures; write/rename/fsync failures; malformed snapshot fuzzing; stale temporary files; worker saturation and shutdown-under-load; and large-index performance. Newline-containing paths are covered with NUL output in integration tests, but JSON output is not implemented.
