@@ -55,10 +55,15 @@ int main(void) {
     const uint32_t *SavedFileIds = Index.TrigramFileIds;
     size_t SavedTrigramCount = Index.TrigramCount;
     size_t SavedPostingCount = Index.TrigramPostingCount;
+    const unsigned char *SavedPostingData = Index.TrigramData;
+    size_t SavedPostingDataSize = Index.TrigramDataSize;
+    const CearchPostingSkip *SavedSkips = Index.TrigramSkips;
+    size_t SavedSkipCount = Index.TrigramSkipCount;
 
     CearchIndex MappedIndex = { .Entries = Entries, .Count = Index.Count };
     assert(CearchAttachNameIndex(&MappedIndex, SavedTrigrams, SavedTrigramCount,
-                                 SavedFileIds, SavedPostingCount));
+                                 SavedFileIds, SavedPostingCount, SavedPostingData,
+                                 SavedPostingDataSize, SavedSkips, SavedSkipCount));
     assert(!MappedIndex.OwnsNameIndex);
     assert(CearchNameQueryPrepare("ALPHA", &Prepared));
     assert(CearchNameCandidatesBegin(&MappedIndex, &Prepared, &Iterator));
