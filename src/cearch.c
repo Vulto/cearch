@@ -170,6 +170,42 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
         return false;
     }
 
+    if (CearchQueryHasFuzzy(&ParsedQuery)) {
+        size_t Capacity = Table.Count < Limit ? Table.Count : Limit;
+        CearchQueryHit *Hits = Capacity ? calloc(Capacity, sizeof(*Hits)) : NULL;
+        if (Capacity && !Hits) {
+            CearchQueryFree(&ParsedQuery);
+            CearchNameQueryFree(&Prepared);
+            CearchFreeNameIndex(&Index);
+            FreeTable(&Table);
+            CearchStoreClose(&Store);
+            return false;
+        }
+        size_t HitCount = 0U;
+        for (size_t EntryIndex = 0U; EntryIndex < Table.Count; ++EntryIndex) {
+            const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
+            const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
+            uint32_t Score = 0U;
+            if (CearchQueryScoreEntry(&ParsedQuery, Entry, Haystack, &Score))
+                CearchQueryHitConsider(Hits, &HitCount, Capacity, Entry->Path, Score);
+        }
+        if (HitCount > 1U) qsort(Hits, HitCount, sizeof(*Hits), CearchQueryHitCompare);
+        bool Success = true;
+        for (size_t HitIndex = 0U; HitIndex < HitCount; ++HitIndex) {
+            if (!PrintPath(Hits[HitIndex].Path, NullDelimited)) {
+                Success = false;
+                break;
+            }
+        }
+        free(Hits);
+        CearchQueryFree(&ParsedQuery);
+        CearchNameQueryFree(&Prepared);
+        CearchFreeNameIndex(&Index);
+        FreeTable(&Table);
+        CearchStoreClose(&Store);
+        return Success;
+    }
+
     size_t Found = 0U;
     size_t ScanIndex = 0U;
     uint32_t FileId = 0U;
