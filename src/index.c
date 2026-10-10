@@ -242,6 +242,73 @@ bool CearchNameQueryPrepare(const char *Query, CearchNameQuery *Prepared) {
     return QueryTrigramKeys(Query, &Prepared->Keys, &Prepared->Count);
 }
 
+bool CearchNameCandidatesBegin(const CearchIndex *Index, const CearchNameQuery *Query,
+                               CearchNameCandidateIterator *Iterator) {
+    if (!Index || !Query || !Iterator) return false;
+    *Iterator = (CearchNameCandidateIterator){
+        .Index = Index,
+        .Query = Query,
+        .Position = 0U,
+        .End = 0U,
+        .AllCursor = 0U,
+        .AllFiles = Query->Count == 0U,
+        .Empty = false
+    };
+    if (Iterator->AllFiles) return true;
+
+    const CearchTrigramPosting *Seed = nullptr;
+    for (size_t KeyIndex = 0U; KeyIndex < Query->Count; ++KeyIndex) {
+        const CearchTrigramPosting *Posting = FindPosting(Index, Query->Keys[KeyIndex]);
+        if (!Posting) {
+            Iterator->Empty = true;
+            return true;
+        }
+        if (!Seed || Posting->Count < Seed->Count) Seed = Posting;
+    }
+    if (!Seed || Seed->Start > Index->TrigramPostingCount ||
+        Seed->Count > Index->TrigramPostingCount - (size_t)Seed->Start) {
+        Iterator->Empty = true;
+        return true;
+    }
+    Iterator->Position = Seed->Start;
+    Iterator->End = Seed->Start + Seed->Count;
+    return true;
+}
+
+bool CearchNameCandidatesNext(CearchNameCandidateIterator *Iterator, uint32_t *FileId) {
+    if (!Iterator || !Iterator->Index || !Iterator->Query || !FileId || Iterator->Empty)
+        return false;
+    const CearchIndex *Index = Iterator->Index;
+    if (Iterator->AllFiles) {
+        if ((size_t)Iterator->AllCursor >= Index->Count) return false;
+        *FileId = Iterator->AllCursor++;
+        return true;
+    }
+
+    while (Iterator->Position < Iterator->End) {
+        if (!Index->TrigramFileIds || Iterator->Position >= Index->TrigramPostingCount) {
+            Iterator->Empty = true;
+            return false;
+        }
+        uint32_t Candidate = Index->TrigramFileIds[(size_t)Iterator->Position++];
+        if (Candidate >= Index->Count) continue;
+        bool Match = true;
+        for (size_t KeyIndex = 0U; KeyIndex < Iterator->Query->Count; ++KeyIndex) {
+            const CearchTrigramPosting *Posting =
+                FindPosting(Index, Iterator->Query->Keys[KeyIndex]);
+            if (!Posting || !PostingContains(Index, Posting, Candidate)) {
+                Match = false;
+                break;
+            }
+        }
+        if (Match) {
+            *FileId = Candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
 void CearchNameQueryFree(CearchNameQuery *Prepared) {
     if (!Prepared) return;
     free(Prepared->Keys);
