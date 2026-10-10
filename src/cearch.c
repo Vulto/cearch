@@ -25,6 +25,7 @@ typedef struct {
     CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
+    bool OwnsPaths;
 } FileTable;
 
 static void PrintUsage(FILE *Stream) {
@@ -67,7 +68,8 @@ static bool ReserveEntries(FileTable *Table, size_t Needed) {
 }
 
 static void FreeTable(FileTable *Table) {
-    for (size_t Index = 0; Index < Table->Count; ++Index) free(Table->Entries[Index].Path);
+    if (Table->OwnsPaths)
+        for (size_t Index = 0; Index < Table->Count; ++Index) free(Table->Entries[Index].Path);
     free(Table->Entries);
     *Table = (FileTable){0};
 }
@@ -80,35 +82,35 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     return CearchBuildSnapshot(Database, (const char *const *)Roots, (size_t)RootCount, nullptr);
 }
 
-static bool LoadDatabase(const char *Database, FileTable *Table) {
-    CearchStore Store = { .Descriptor = -1 };
-    if (!CearchStoreOpen(Database, &Store)) {
+static bool LoadDatabase(const char *Database, FileTable *Table, CearchStore *Store) {
+    if (!Table || !Store) {
+        errno = EINVAL;
+        return false;
+    }
+    *Table = (FileTable){0};
+    *Store = (CearchStore){ .Descriptor = -1 };
+    if (!CearchStoreOpen(Database, Store)) {
         fprintf(stderr, "cearch: cannot open or validate snapshot %s: %s\n", Database, strerror(errno));
         return false;
     }
-    if (Store.EntryCount > SIZE_MAX / sizeof(*Table->Entries) ||
-        !ReserveEntries(Table, Store.EntryCount)) {
+    if (Store->EntryCount > SIZE_MAX / sizeof(*Table->Entries) ||
+        !ReserveEntries(Table, Store->EntryCount)) {
         fprintf(stderr, "cearch: out of memory loading snapshot\n");
-        CearchStoreClose(&Store);
+        CearchStoreClose(Store);
         return false;
     }
-    for (size_t Index = 0; Index < Store.EntryCount; ++Index) {
-        const CearchDiskEntry *Source = &Store.Entries[Index];
-        const char *Path = CearchStorePath(&Store, Index);
+
+    for (size_t Index = 0U; Index < Store->EntryCount; ++Index) {
+        const CearchDiskEntry *Source = &Store->Entries[Index];
+        const char *Path = CearchStorePath(Store, Index);
         if (!Path) {
             fprintf(stderr, "cearch: invalid path offset in snapshot\n");
-            CearchStoreClose(&Store);
-            FreeTable(Table);
-            return false;
-        }
-        char *Copy = strdup(Path);
-        if (!Copy) {
-            CearchStoreClose(&Store);
+            CearchStoreClose(Store);
             FreeTable(Table);
             return false;
         }
         Table->Entries[Table->Count++] = (CearchFileEntry){
-            .Path = Copy,
+            .Path = (char *)Path,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
             .Device = Source->Device,
@@ -116,7 +118,7 @@ static bool LoadDatabase(const char *Database, FileTable *Table) {
             .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o'
         };
     }
-    CearchStoreClose(&Store);
+    Table->OwnsPaths = false;
     return true;
 }
 
@@ -135,29 +137,32 @@ static const char *BaseName(const char *Path) {
 
 static bool SearchCommand(const char *Database, const char *Query, bool MatchPath, size_t Limit) {
     FileTable Table = {0};
-    if (!LoadDatabase(Database, &Table)) return false;
+    CearchStore Store = { .Descriptor = -1 };
+    if (!LoadDatabase(Database, &Table, &Store)) return false;
 
     CearchIndex Index = {0};
     Index.Entries = Table.Entries;
     Index.Count = Table.Count;
-    if (Table.Count > UINT32_MAX || !CearchBuildNameIndex(&Index)) {
-        fprintf(stderr, "cearch: could not build trigram index\n");
+    if (!CearchAttachNameIndex(&Index, Store.Trigrams, Store.TrigramCount,
+                               Store.TrigramFileIds, Store.TrigramPostingCount)) {
+        fprintf(stderr, "cearch: invalid persisted trigram index\n");
         FreeTable(&Table);
-        CearchFreeNameIndex(&Index);
+        CearchStoreClose(&Store);
         return false;
     }
 
-    size_t Found = 0;
+    size_t Found = 0U;
     size_t QueryLength = strlen(Query);
     bool UseTrigrams = QueryLength >= 3U && !MatchPath;
     CearchNameQuery Prepared = {0};
     if (UseTrigrams && !CearchNameQueryPrepare(Query, &Prepared)) {
         CearchFreeNameIndex(&Index);
         FreeTable(&Table);
+        CearchStoreClose(&Store);
         return false;
     }
 
-    for (size_t EntryIndex = 0; EntryIndex < Table.Count; ++EntryIndex) {
+    for (size_t EntryIndex = 0U; EntryIndex < Table.Count; ++EntryIndex) {
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
         if (UseTrigrams &&
@@ -167,6 +172,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
             CearchNameQueryFree(&Prepared);
             CearchFreeNameIndex(&Index);
             FreeTable(&Table);
+            CearchStoreClose(&Store);
             return false;
         }
         if (++Found >= Limit) break;
@@ -175,6 +181,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     CearchNameQueryFree(&Prepared);
     CearchFreeNameIndex(&Index);
     FreeTable(&Table);
+    CearchStoreClose(&Store);
     return true;
 }
 
@@ -230,26 +237,30 @@ static bool FileContains(const char *Path, const char *Query) {
 
 static bool ContentCommand(const char *Database, const char *Query, size_t Limit) {
     FileTable Table = {0};
-    if (!LoadDatabase(Database, &Table)) return false;
-    size_t Found = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
+    CearchStore Store = { .Descriptor = -1 };
+    if (!LoadDatabase(Database, &Table, &Store)) return false;
+    size_t Found = 0U;
+    for (size_t Index = 0U; Index < Table.Count; ++Index) {
         const CearchFileEntry *Entry = &Table.Entries[Index];
         if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
         if (puts(Entry->Path) == EOF) {
             FreeTable(&Table);
+            CearchStoreClose(&Store);
             return false;
         }
         if (++Found >= Limit) break;
     }
     FreeTable(&Table);
+    CearchStoreClose(&Store);
     return true;
 }
 
 static bool StatsCommand(const char *Database) {
     FileTable Table = {0};
-    if (!LoadDatabase(Database, &Table)) return false;
-    size_t Files = 0, Directories = 0, Other = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
+    CearchStore Store = { .Descriptor = -1 };
+    if (!LoadDatabase(Database, &Table, &Store)) return false;
+    size_t Files = 0U, Directories = 0U, Other = 0U;
+    for (size_t Index = 0U; Index < Table.Count; ++Index) {
         if (Table.Entries[Index].Type == 'f') ++Files;
         else if (Table.Entries[Index].Type == 'd') ++Directories;
         else ++Other;
@@ -257,6 +268,7 @@ static bool StatsCommand(const char *Database) {
     printf("entries: %zu\nfiles: %zu\ndirectories: %zu\nother: %zu\n",
            Table.Count, Files, Directories, Other);
     FreeTable(&Table);
+    CearchStoreClose(&Store);
     return true;
 }
 
