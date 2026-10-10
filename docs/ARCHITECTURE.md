@@ -14,7 +14,7 @@ The shared `CearchBuildSnapshot` path is used by the CLI index command and daemo
 
 For query strings at least three bytes long, cearch produces unique ASCII-lowercased byte trigrams, finds postings, and uses posting membership to reject candidates before literal case-insensitive verification. Short queries use a scan. The index stores postings for all indexed paths, so basename matches remain candidates; the original query always verifies the final result.
 
-The one-shot CLI loads snapshot entries and rebuilds the in-memory trigram index per invocation. The daemon builds it once at startup and retains it across client requests. Trigram postings are not yet persisted in the snapshot, and the in-memory builder currently sorts temporary key/file-ID pairs at startup. The content index is also not persistent: content queries read the current contents of indexed regular files.
+The snapshot stores sorted trigram metadata, delta-coded numeric file IDs, and skip checkpoints. Queries attach these arrays directly from the read-only mapping and decode candidate IDs without rebuilding the full posting index. The daemon retains the mapped snapshot across requests. The content index is not persistent: content queries read the current contents of indexed regular files.
 
 ## Daemon and protocol
 
@@ -39,8 +39,7 @@ These query-language features are not implemented yet. A future parser must buil
 
 ## Next architecture stages
 
-1. Persist sorted trigram postings in the snapshot and query directly from mmap without reconstructing a full heap index.
-2. Compress posting lists with delta-coded numeric file IDs and compact parent/name records to avoid full path duplication.
+1. Reduce startup and query costs further with measured benchmarks and profiling; avoid adding complexity without evidence.
 3. Introduce an append-only update journal and periodic snapshot compaction, while keeping full reconciliation as a correctness fallback.
 4. Add a persistent content candidate index, always verifying current contents before reporting hits.
 5. Add bounded multi-client concurrency, query cancellation, protocol fuzzing, and repeatable performance benchmarks.
