@@ -25,6 +25,7 @@ typedef struct {
     CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
+    bool OwnsPaths;
 } FileTable;
 
 static void PrintUsage(FILE *Stream) {
@@ -67,7 +68,8 @@ static bool ReserveEntries(FileTable *Table, size_t Needed) {
 }
 
 static void FreeTable(FileTable *Table) {
-    for (size_t Index = 0; Index < Table->Count; ++Index) free(Table->Entries[Index].Path);
+    if (Table->OwnsPaths)
+        for (size_t Index = 0; Index < Table->Count; ++Index) free(Table->Entries[Index].Path);
     free(Table->Entries);
     *Table = (FileTable){0};
 }
@@ -80,35 +82,35 @@ static bool IndexCommand(const char *Database, int RootCount, char **Roots) {
     return CearchBuildSnapshot(Database, (const char *const *)Roots, (size_t)RootCount, nullptr);
 }
 
-static bool LoadDatabase(const char *Database, FileTable *Table) {
-    CearchStore Store = { .Descriptor = -1 };
-    if (!CearchStoreOpen(Database, &Store)) {
+static bool LoadDatabase(const char *Database, FileTable *Table, CearchStore *Store) {
+    if (!Table || !Store) {
+        errno = EINVAL;
+        return false;
+    }
+    *Table = (FileTable){0};
+    *Store = (CearchStore){ .Descriptor = -1 };
+    if (!CearchStoreOpen(Database, Store)) {
         fprintf(stderr, "cearch: cannot open or validate snapshot %s: %s\n", Database, strerror(errno));
         return false;
     }
-    if (Store.EntryCount > SIZE_MAX / sizeof(*Table->Entries) ||
-        !ReserveEntries(Table, Store.EntryCount)) {
+    if (Store->EntryCount > SIZE_MAX / sizeof(*Table->Entries) ||
+        !ReserveEntries(Table, Store->EntryCount)) {
         fprintf(stderr, "cearch: out of memory loading snapshot\n");
-        CearchStoreClose(&Store);
+        CearchStoreClose(Store);
         return false;
     }
-    for (size_t Index = 0; Index < Store.EntryCount; ++Index) {
-        const CearchDiskEntry *Source = &Store.Entries[Index];
-        const char *Path = CearchStorePath(&Store, Index);
+
+    for (size_t Index = 0U; Index < Store->EntryCount; ++Index) {
+        const CearchDiskEntry *Source = &Store->Entries[Index];
+        const char *Path = CearchStorePath(Store, Index);
         if (!Path) {
             fprintf(stderr, "cearch: invalid path offset in snapshot\n");
-            CearchStoreClose(&Store);
-            FreeTable(Table);
-            return false;
-        }
-        char *Copy = strdup(Path);
-        if (!Copy) {
-            CearchStoreClose(&Store);
+            CearchStoreClose(Store);
             FreeTable(Table);
             return false;
         }
         Table->Entries[Table->Count++] = (CearchFileEntry){
-            .Path = Copy,
+            .Path = (char *)Path,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
             .Device = Source->Device,
@@ -116,7 +118,7 @@ static bool LoadDatabase(const char *Database, FileTable *Table) {
             .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o'
         };
     }
-    CearchStoreClose(&Store);
+    Table->OwnsPaths = false;
     return true;
 }
 
