@@ -606,6 +606,11 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
         return false;
     }
 
+    if (pthread_rwlock_rdlock(&Daemon->StateLock) != 0) {
+        free(Query);
+        return WriteResponse(Client, 2U, 0U, "server busy", 11U);
+    }
+
     bool Success = true;
     char *Output = nullptr;
     size_t OutputLength = 0;
@@ -647,6 +652,7 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
             break;
     }
 
+    (void)pthread_rwlock_unlock(&Daemon->StateLock);
     free(Query);
     if (!Success) {
         free(Output);
@@ -675,10 +681,7 @@ static void *ClientWorker(void *Context) {
     struct timeval Timeout = { .tv_sec = 10, .tv_usec = 0 };
     (void)setsockopt(Client, SOL_SOCKET, SO_RCVTIMEO, &Timeout, sizeof(Timeout));
     (void)setsockopt(Client, SOL_SOCKET, SO_SNDTIMEO, &Timeout, sizeof(Timeout));
-    if (pthread_rwlock_rdlock(&Daemon->StateLock) == 0) {
-        (void)HandleClient(Daemon, Client);
-        (void)pthread_rwlock_unlock(&Daemon->StateLock);
-    }
+    (void)HandleClient(Daemon, Client);
     close(Client);
     free(Task);
     (void)pthread_mutex_lock(&Daemon->ClientMutex);
