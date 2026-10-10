@@ -6,6 +6,9 @@
 #include "indexer.h"
 #include <dirent.h>
 #include <poll.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <sys/time.h>
 #include <sys/inotify.h>
 #include <time.h>
 
@@ -45,16 +48,21 @@ typedef struct {
     int WatchFd;
     bool Dirty;
     time_t LastReconcile;
+    pthread_rwlock_t StateLock;
+    pthread_mutex_t ClientMutex;
+    pthread_cond_t ClientCondition;
+    size_t ActiveClients;
 } CearchDaemon;
 
 static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database);
 static void FreeDaemonIndex(CearchDaemon *Daemon);
 
-static volatile sig_atomic_t StopRequested = 0;
+static volatile sig_atomic_t SignalStopRequested = 0;
+static atomic_bool ClientStopRequested = ATOMIC_VAR_INIT(false);
 
 static void HandleSignal(int Signal) {
     (void)Signal;
-    StopRequested = 1;
+    SignalStopRequested = 1;
 }
 
 static bool ReadExact(int Descriptor, void *Buffer, size_t Length) {
@@ -63,7 +71,7 @@ static bool ReadExact(int Descriptor, void *Buffer, size_t Length) {
     while (ReadCount < Length) {
         ssize_t Result = read(Descriptor, Cursor + ReadCount, Length - ReadCount);
         if (Result < 0 && errno == EINTR) {
-            if (StopRequested) return false;
+            if (SignalStopRequested || atomic_load_explicit(&ClientStopRequested, memory_order_relaxed)) return false;
             continue;
         }
         if (Result <= 0) return false;
@@ -237,6 +245,10 @@ static bool ReconcileDaemon(CearchDaemon *Daemon) {
         return false;
     }
 
+    if (pthread_rwlock_wrlock(&Daemon->StateLock) != 0) {
+        FreeDaemonIndex(&Replacement);
+        return false;
+    }
     CearchStore OldStore = Daemon->Store;
     CearchFileEntry *OldEntries = Daemon->Entries;
     CearchIndex OldIndex = Daemon->NameIndex;
@@ -256,6 +268,7 @@ static bool ReconcileDaemon(CearchDaemon *Daemon) {
     free(OldEntries);
     CearchStoreClose(&OldStore);
     free(OldDatabase);
+    (void)pthread_rwlock_unlock(&Daemon->StateLock);
     Daemon->Dirty = false;
     Daemon->LastReconcile = time(nullptr);
     fprintf(stderr, "cearchd: reconciled %zu entries\n", Stats.EntryCount);
@@ -624,7 +637,7 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
             OutputLength = 3U;
             break;
         case CearchCommandShutdown:
-            StopRequested = 1;
+            atomic_store_explicit(&ClientStopRequested, true, memory_order_relaxed);
             Output = strdup("stopping\n");
             Success = Output != nullptr;
             OutputLength = 9U;
@@ -642,6 +655,65 @@ static bool HandleClient(CearchDaemon *Daemon, int Client) {
     bool Written = WriteResponse(Client, 0U, Found, Output, OutputLength);
     free(Output);
     return Written;
+}
+
+typedef struct {
+    CearchDaemon *Daemon;
+    int Client;
+} CearchClientTask;
+
+static void DestroyDaemonSync(CearchDaemon *Daemon) {
+    (void)pthread_cond_destroy(&Daemon->ClientCondition);
+    (void)pthread_mutex_destroy(&Daemon->ClientMutex);
+    (void)pthread_rwlock_destroy(&Daemon->StateLock);
+}
+
+static void *ClientWorker(void *Context) {
+    CearchClientTask *Task = Context;
+    CearchDaemon *Daemon = Task->Daemon;
+    int Client = Task->Client;
+    struct timeval Timeout = { .tv_sec = 10, .tv_usec = 0 };
+    (void)setsockopt(Client, SOL_SOCKET, SO_RCVTIMEO, &Timeout, sizeof(Timeout));
+    (void)setsockopt(Client, SOL_SOCKET, SO_SNDTIMEO, &Timeout, sizeof(Timeout));
+    if (pthread_rwlock_rdlock(&Daemon->StateLock) == 0) {
+        (void)HandleClient(Daemon, Client);
+        (void)pthread_rwlock_unlock(&Daemon->StateLock);
+    }
+    close(Client);
+    free(Task);
+    (void)pthread_mutex_lock(&Daemon->ClientMutex);
+    if (Daemon->ActiveClients > 0U) --Daemon->ActiveClients;
+    (void)pthread_cond_broadcast(&Daemon->ClientCondition);
+    (void)pthread_mutex_unlock(&Daemon->ClientMutex);
+    return nullptr;
+}
+
+static void StartClientWorker(CearchDaemon *Daemon, int Client) {
+    CearchClientTask *Task = malloc(sizeof(*Task));
+    if (!Task) { close(Client); return; }
+    *Task = (CearchClientTask){ .Daemon = Daemon, .Client = Client };
+    (void)pthread_mutex_lock(&Daemon->ClientMutex);
+    if (Daemon->ActiveClients >= CearchMaximumClients) {
+        (void)pthread_mutex_unlock(&Daemon->ClientMutex);
+        free(Task);
+        close(Client);
+        return;
+    }
+    ++Daemon->ActiveClients;
+    (void)pthread_mutex_unlock(&Daemon->ClientMutex);
+
+    pthread_t Worker;
+    int Error = pthread_create(&Worker, nullptr, ClientWorker, Task);
+    if (Error != 0) {
+        (void)pthread_mutex_lock(&Daemon->ClientMutex);
+        --Daemon->ActiveClients;
+        (void)pthread_cond_broadcast(&Daemon->ClientCondition);
+        (void)pthread_mutex_unlock(&Daemon->ClientMutex);
+        free(Task);
+        close(Client);
+        return;
+    }
+    if (pthread_detach(Worker) != 0) (void)pthread_join(Worker, nullptr);
 }
 
 static char *DefaultSocketPath(void) {
@@ -662,15 +734,26 @@ static char *DefaultSocketPath(void) {
 
 static int RunDaemon(const char *Database, const char *SocketPath,
                      const char *const *Roots, size_t RootCount) {
-    CearchDaemon Daemon = { .Listener = -1, .Store = { .Descriptor = -1 }, .WatchFd = -1 };
+    CearchDaemon Daemon = {
+        .Listener = -1,
+        .Store = { .Descriptor = -1 },
+        .WatchFd = -1,
+        .StateLock = PTHREAD_RWLOCK_INITIALIZER,
+        .ClientMutex = PTHREAD_MUTEX_INITIALIZER,
+        .ClientCondition = PTHREAD_COND_INITIALIZER
+    };
+    SignalStopRequested = 0;
+    atomic_store_explicit(&ClientStopRequested, false, memory_order_relaxed);
     if (!BuildDaemonIndex(&Daemon, Database)) {
         fprintf(stderr, "cearchd: cannot load index: %s\n", strerror(errno));
         FreeDaemonIndex(&Daemon);
+        DestroyDaemonSync(&Daemon);
         return 1;
     }
     if (!CopyRoots(&Daemon, Roots, RootCount)) {
         fprintf(stderr, "cearchd: cannot allocate root list\n");
         FreeDaemonIndex(&Daemon);
+        DestroyDaemonSync(&Daemon);
         return 1;
     }
     if (Daemon.RootCount) {
@@ -681,6 +764,7 @@ static int RunDaemon(const char *Database, const char *SocketPath,
             Daemon.WatchFd = -1;
             FreeRoots(&Daemon);
             FreeDaemonIndex(&Daemon);
+            DestroyDaemonSync(&Daemon);
             return 1;
         }
     }
@@ -691,6 +775,7 @@ static int RunDaemon(const char *Database, const char *SocketPath,
         if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
         FreeRoots(&Daemon);
         FreeDaemonIndex(&Daemon);
+        DestroyDaemonSync(&Daemon);
         return 1;
     }
     struct sockaddr_un Address = { .sun_family = AF_UNIX };
@@ -714,6 +799,7 @@ static int RunDaemon(const char *Database, const char *SocketPath,
         if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
         FreeRoots(&Daemon);
         FreeDaemonIndex(&Daemon);
+        DestroyDaemonSync(&Daemon);
         return 1;
     }
 
@@ -727,7 +813,7 @@ static int RunDaemon(const char *Database, const char *SocketPath,
     fprintf(stderr, "cearchd: serving %zu entries on %s%s\n",
             Daemon.EntryCount, SocketPath, Daemon.RootCount ? " with live reconciliation" : "");
 
-    while (!StopRequested) {
+    while (!SignalStopRequested && !atomic_load_explicit(&ClientStopRequested, memory_order_relaxed)) {
         struct pollfd PollDescriptors[2];
         nfds_t PollCount = 1U;
         PollDescriptors[0] = (struct pollfd){ .fd = Listener, .events = POLLIN };
@@ -750,23 +836,25 @@ static int RunDaemon(const char *Database, const char *SocketPath,
             (void)ReconcileDaemon(&Daemon);
         }
         if ((PollDescriptors[0].revents & POLLIN) == 0) continue;
-        int Client = accept4(Listener, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
+        int Client = accept4(Listener, nullptr, nullptr, SOCK_CLOEXEC);
         if (Client < 0) {
             if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
             fprintf(stderr, "cearchd: accept: %s\n", strerror(errno));
             break;
         }
-        /* Connections are handled synchronously with bounded protocol payloads. */
-        (void)fcntl(Client, F_SETFL, fcntl(Client, F_GETFL, 0) & ~O_NONBLOCK);
-        (void)HandleClient(&Daemon, Client);
-        close(Client);
+        StartClientWorker(&Daemon, Client);
     }
 
     close(Listener);
     if (Daemon.WatchFd >= 0) close(Daemon.WatchFd);
     (void)unlink(SocketPath);
+    (void)pthread_mutex_lock(&Daemon.ClientMutex);
+    while (Daemon.ActiveClients != 0U)
+        (void)pthread_cond_wait(&Daemon.ClientCondition, &Daemon.ClientMutex);
+    (void)pthread_mutex_unlock(&Daemon.ClientMutex);
     FreeRoots(&Daemon);
     FreeDaemonIndex(&Daemon);
+    DestroyDaemonSync(&Daemon);
     return 0;
 }
 
