@@ -16,8 +16,9 @@ typedef struct {
 
 typedef struct {
     uint32_t Key;
-    size_t Start;
-    size_t Count;
+    uint32_t Reserved;
+    uint64_t Start;
+    uint64_t Count;
 } CearchTrigramPosting;
 
 typedef struct {
@@ -33,9 +34,12 @@ typedef struct {
     size_t TrigramCount;
     uint32_t *TrigramFileIds;
     size_t TrigramPostingCount;
+    bool OwnsNameIndex;
 } CearchIndex;
 
 bool CearchBuildNameIndex(CearchIndex *Index);
+bool CearchAttachNameIndex(CearchIndex *Index, const CearchTrigramPosting *Trigrams,
+                           size_t TrigramCount, const uint32_t *FileIds, size_t FileIdCount);
 void CearchFreeNameIndex(CearchIndex *Index);
 bool CearchNameQueryPrepare(const char *Query, CearchNameQuery *Prepared);
 void CearchNameQueryFree(CearchNameQuery *Prepared);
