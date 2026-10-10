@@ -38,6 +38,7 @@ typedef struct {
 } CearchIndex;
 
 bool CearchBuildNameIndex(CearchIndex *Index);
+/* Attaches arrays already validated by CearchStoreOpen or produced by CearchBuildNameIndex. */
 bool CearchAttachNameIndex(CearchIndex *Index, const CearchTrigramPosting *Trigrams,
                            size_t TrigramCount, const uint32_t *FileIds, size_t FileIdCount);
 void CearchFreeNameIndex(CearchIndex *Index);
