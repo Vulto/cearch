@@ -59,7 +59,7 @@ typedef struct {
     uint32_t Score;
 } CearchQueryHit;
 
-/* Grammar: terms, quoted phrases, exact:/prefix:/suffix:, NOT, AND, OR, and parentheses. Query must be zero-initialized or previously parsed. */
+/* Grammar includes match modes, regex/fuzzy terms, metadata predicates, boolean operators, and parentheses. Query must be zero-initialized or previously parsed. */
 bool CearchQueryParse(const char *Text, CearchQuery *Query);
 const char *CearchQuerySimpleTerm(const CearchQuery *Query);
 bool CearchQueryMatches(const CearchQuery *Query, const char *Text);
