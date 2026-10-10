@@ -25,33 +25,20 @@ grep -q '/needle.txt$' "$TempDir/search"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/stats"
-grep -q '^entries: 4"$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
-wait "$DaemonPid"
-DaemonPid=
-echo 'cearch daemon tests passed'
- "$TempDir/stats"
+grep -q '^entries: 4$' "$TempDir/stats"
 
 printf 'live_reconciliation_marker\n' > "$TempDir/root/new-arrival.txt"
 Attempts=0
 until "$Daemon" client --socket "$TempDir/run/cearch.sock" search new-arrival > "$TempDir/live-search" &&
-      grep -q '/new-arrival.txt"$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
-wait "$DaemonPid"
-DaemonPid=
-echo 'cearch daemon tests passed'
- "$TempDir/live-search"; do
+      grep -q '/new-arrival.txt$' "$TempDir/live-search"; do
     Attempts=$((Attempts + 1))
-    if [ "$Attempts" -ge 100 ]; then
-        echo 'daemon did not reconcile a new file' >&2
-        exit 1
-    fi
+    if [ "$Attempts" -ge 100 ]; then echo 'daemon did not reconcile a new file' >&2; exit 1; fi
     sleep 0.1
 done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content live_reconciliation_marker > "$TempDir/live-content"
-grep -q '/new-arrival.txt"$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
-wait "$DaemonPid"
-DaemonPid=
-echo 'cearch daemon tests passed'
- "$TempDir/live-content"
+grep -q '/new-arrival.txt$' "$TempDir/live-content"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/live-stats"
+grep -q '^entries: 5$' "$TempDir/live-stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
 DaemonPid=
