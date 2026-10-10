@@ -38,7 +38,26 @@ done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content live_reconciliation_marker > "$TempDir/live-content"
 grep -q '/new-arrival.txt$' "$TempDir/live-content"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/live-stats"
-grep -q '^entries: 5$' "$TempDir/live-stats"
+grep -q '^entries: 5
+wait "$DaemonPid"
+DaemonPid=
+echo 'cearch daemon tests passed'
+ "$TempDir/live-stats"
+
+rm "$TempDir/root/needle.txt"
+Attempts=0
+until "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/removed-search" &&
+      test ! -s "$TempDir/removed-search"; do
+    Attempts=$((Attempts + 1))
+    if [ "$Attempts" -ge 100 ]; then echo 'daemon did not reconcile a deleted file' >&2; exit 1; fi
+    sleep 0.1
+done
+"$Daemon" client --socket "$TempDir/run/cearch.sock" stats > "$TempDir/removed-stats"
+grep -q '^entries: 4
+wait "$DaemonPid"
+DaemonPid=
+echo 'cearch daemon tests passed'
+ "$TempDir/removed-stats"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" shutdown >/dev/null
 wait "$DaemonPid"
 DaemonPid=
