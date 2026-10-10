@@ -27,6 +27,8 @@ done
 grep -q '/needle.txt$' "$TempDir/search"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search 'prefix:needle' > "$TempDir/prefix"
 grep -q '/needle.txt$' "$TempDir/prefix"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" search 'regex:^needle[.]txt$' > "$TempDir/regex"
+grep -q '/needle.txt$' "$TempDir/regex"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search ext:txt > "$TempDir/ext"
 grep -q '/needle.txt$' "$TempDir/ext"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search "in:$TempDir/root/sub" > "$TempDir/in-filter"

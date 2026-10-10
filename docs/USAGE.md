@@ -18,9 +18,31 @@ cearch stats --db DB
 
 The indexer recursively walks each root without following directory symlinks. Hidden files are included. Traversal failures fail the indexing operation so an incomplete scan is not silently presented as a complete snapshot. The snapshot is written to a temporary file, synced, atomically renamed into place, and the containing directory is synced before indexing reports success.
 
-Name search accepts terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, and `in:`, `NOT`, `AND`, `OR`, and parentheses. `NOT` binds most tightly, then `AND`, then `OR`; operators must be explicit. A simple term uses the persisted trigram postings, while compound expressions scan candidate paths and evaluate the AST. Terms match case-insensitive substrings. Name search matches case-insensitively against the basename by default. Use `--path` to match the full path. Short queries use a scan; longer queries use trigram postings to reduce candidate verification. Results are newline-delimited by default; pass `--null` to CLI or daemon-client `search`/`content` commands for NUL-delimited output that safely represents filenames containing newlines.
+Name search accepts terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, and `in:`, POSIX extended `regex:` terms, `NOT`, `AND`, `OR`, and parentheses. `NOT` binds most tightly, then `AND`, then `OR`; operators must be explicit. A simple term uses the persisted trigram postings, while compound expressions scan candidate paths and evaluate the AST. Terms match case-insensitive substrings. Name search matches case-insensitively against the basename by default. Use `--path` to match the full path. Short queries use a scan; longer queries use trigram postings to reduce candidate verification. Results are newline-delimited by default; pass `--null` to CLI or daemon-client `search`/`content` commands for NUL-delimited output that safely represents filenames containing newlines.
 
-Filters include `ext:txt`, `type:file`, `type:dir`, `size:>10mb`, `mtime:<7d`, `path:/home/me`, and `in:/home/me/Documents`. Size units are bytes or binary KB/MB/GB/TB; age units are seconds/minutes/hours/days/weeks. `path:` is a full-path substring; `in:` requires a path-component boundary. Content search reads indexed regular files afresh and verifies literal matches against current file bytes. Files containing NUL bytes are skipped. This is not a persistent content inverted index.
+Regex terms use POSIX extended regular expressions, are case-insensitive, and search within the selected basename/full-path text unless anchored with `^` or `# Usage
+
+## Build
+
+```sh
+make
+make test
+```
+
+## Index snapshot
+
+```sh
+cearch index --db DB ROOT [ROOT ...]
+cearch search --db DB [--limit N] [--path] QUERY
+cearch content --db DB [--limit N] QUERY
+cearch stats --db DB
+```
+
+The indexer recursively walks each root without following directory symlinks. Hidden files are included. Traversal failures fail the indexing operation so an incomplete scan is not silently presented as a complete snapshot. The snapshot is written to a temporary file, synced, atomically renamed into place, and the containing directory is synced before indexing reports success.
+
+Name search accepts terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, and `in:`, POSIX extended `regex:` terms, `NOT`, `AND`, `OR`, and parentheses. `NOT` binds most tightly, then `AND`, then `OR`; operators must be explicit. A simple term uses the persisted trigram postings, while compound expressions scan candidate paths and evaluate the AST. Terms match case-insensitive substrings. Name search matches case-insensitively against the basename by default. Use `--path` to match the full path. Short queries use a scan; longer queries use trigram postings to reduce candidate verification. Results are newline-delimited by default; pass `--null` to CLI or daemon-client `search`/`content` commands for NUL-delimited output that safely represents filenames containing newlines.
+
+. For patterns containing spaces, use `regex:"two words"`. Filters include `ext:txt`, `type:file`, `type:dir`, `size:>10mb`, `mtime:<7d`, `path:/home/me`, and `in:/home/me/Documents`. Size units are bytes or binary KB/MB/GB/TB; age units are seconds/minutes/hours/days/weeks. `path:` is a full-path substring; `in:` requires a path-component boundary. Content search reads indexed regular files afresh and verifies literal matches against current file bytes. Files containing NUL bytes are skipped. This is not a persistent content inverted index.
 
 ## Daemon
 

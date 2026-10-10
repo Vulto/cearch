@@ -4,6 +4,7 @@
 #include "index.h"
 
 #include <stdbool.h>
+#include <regex.h>
 #include <stdint.h>
 
 typedef enum {
@@ -21,6 +22,7 @@ typedef enum {
     CearchQueryFilterMtime,
     CearchQueryFilterPath,
     CearchQueryFilterIn,
+    CearchQueryRegex,
     CearchQueryNot,
     CearchQueryAnd,
     CearchQueryOr
@@ -40,6 +42,8 @@ typedef struct CearchQueryNode {
     CearchQueryMatchMode Mode;
     CearchQueryComparison Comparison;
     uint64_t Value;
+    regex_t Regex;
+    bool RegexCompiled;
     struct CearchQueryNode *Left;
     struct CearchQueryNode *Right;
 } CearchQueryNode;

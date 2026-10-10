@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <regex.h>
 #include <string.h>
 #include <strings.h>
 #include <time.h>
@@ -33,6 +34,7 @@ static void FreeNode(CearchQueryNode *Node) {
     if (!Node) return;
     FreeNode(Node->Left);
     FreeNode(Node->Right);
+    if (Node->RegexCompiled) regfree(&Node->Regex);
     free(Node->Term);
     free(Node);
 }
@@ -88,6 +90,30 @@ static void NextToken(CearchParser *Parser) {
     if (*Parser->Cursor == ')') {
         ++Parser->Cursor;
         Parser->Type = TokenRightParen;
+        return;
+    }
+
+    if (strncasecmp(Parser->Cursor, "regex:", 6U) == 0 && Parser->Cursor[6] == '"') {
+        Parser->Cursor += 7U;
+        size_t Capacity = strlen(Parser->Cursor) + 7U;
+        char *Text = malloc(Capacity);
+        if (!Text) { Parser->Type = TokenInvalid; return; }
+        memcpy(Text, "regex:", 6U);
+        size_t Length = 6U;
+        while (*Parser->Cursor && *Parser->Cursor != '"') {
+            if (*Parser->Cursor == '\\' &&
+                (Parser->Cursor[1] == '"' || Parser->Cursor[1] == '\\')) ++Parser->Cursor;
+            Text[Length++] = *Parser->Cursor++;
+        }
+        if (*Parser->Cursor != '"' || Length == 6U) {
+            free(Text);
+            Parser->Type = TokenInvalid;
+            return;
+        }
+        ++Parser->Cursor;
+        Text[Length] = '\0';
+        Parser->Text = Text;
+        Parser->Type = TokenTerm;
         return;
     }
 
@@ -208,6 +234,21 @@ static bool ParseValueAndUnit(const char *Text, bool Duration,
 static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
     if (Mode != CearchQuerySubstring) return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
     CearchQueryNodeType Type = CearchQueryTerm;
+    if (strncasecmp(Term, "regex:", 6U) == 0) {
+        memmove(Term, Term + 6U, strlen(Term + 6U) + 1U);
+        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+        CearchQueryNode *Node = NewNode(CearchQueryRegex, NULL, NULL, Term, CearchQuerySubstring);
+        if (!Node) return NULL;
+        int Result = regcomp(&Node->Regex, Node->Term, REG_EXTENDED | REG_NOSUB | REG_ICASE);
+        if (Result != 0) {
+            FreeNode(Node);
+            errno = EINVAL;
+            return NULL;
+        }
+        Node->RegexCompiled = true;
+        return Node;
+    }
+
     if (strncasecmp(Term, "ext:", 4U) == 0) {
         Type = CearchQueryFilterExtension;
         memmove(Term, Term + 4U, strlen(Term + 4U) + 1U);
@@ -416,6 +457,8 @@ static bool MatchNode(const CearchQueryNode *Node, const CearchFileEntry *Entry,
     switch (Node->Type) {
         case CearchQueryTerm:
             return MatchTerm(Node, Text);
+        case CearchQueryRegex:
+            return regexec(&Node->Regex, Text, 0U, NULL, 0) == 0;
         case CearchQueryFilterExtension:
         case CearchQueryFilterType:
         case CearchQueryFilterSize:
