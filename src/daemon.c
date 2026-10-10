@@ -153,26 +153,21 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
         const CearchDiskEntry *DiskEntry = &Store.Entries[Index];
         const char *Path = CearchStorePath(&Store, Index);
         if (!Path) {
-            for (size_t FreeIndex = 0; FreeIndex < Index; ++FreeIndex) free(Entries[FreeIndex].Path);
+            
             free(Entries);
             CearchStoreClose(&Store);
             errno = EINVAL;
             return false;
         }
         Entries[Index] = (CearchFileEntry){
-            .Path = strdup(Path),
+            .Path = (char *)Path,
             .Size = DiskEntry->Size,
             .Mtime = DiskEntry->Mtime,
             .Device = DiskEntry->Device,
             .Inode = DiskEntry->Inode,
             .Type = DiskEntry->Type == 1U ? 'f' : DiskEntry->Type == 2U ? 'd' : 'o'
         };
-        if (!Entries[Index].Path) {
-            for (size_t FreeIndex = 0; FreeIndex < Index; ++FreeIndex) free(Entries[FreeIndex].Path);
-            free(Entries);
-            CearchStoreClose(&Store);
-            return false;
-        }
+        
     }
 
     Daemon->Store = Store;
@@ -181,7 +176,7 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
     Daemon->NameIndex.Entries = Entries;
     Daemon->NameIndex.Count = Store.EntryCount;
     if (!CearchBuildNameIndex(&Daemon->NameIndex)) {
-        for (size_t Index = 0; Index < Daemon->EntryCount; ++Index) free(Daemon->Entries[Index].Path);
+        
         free(Daemon->Entries);
         Daemon->Entries = nullptr;
         Daemon->EntryCount = 0;
@@ -189,7 +184,15 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
         return false;
     }
     Daemon->Database = strdup(Database);
-    return Daemon->Database != nullptr;
+    if (!Daemon->Database) {
+        CearchFreeNameIndex(&Daemon->NameIndex);
+        free(Daemon->Entries);
+        Daemon->Entries = nullptr;
+        Daemon->EntryCount = 0;
+        CearchStoreClose(&Daemon->Store);
+        return false;
+    }
+    return true;
 }
 
 static void FreeDaemonIndex(CearchDaemon *Daemon) {
