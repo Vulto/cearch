@@ -8,7 +8,7 @@
 - Persisted trigram metadata, delta-coded posting IDs, skip checkpoints, and mapped posting lookup for filename/path searches.
 - Case-insensitive basename/full-path substring search with literal verification.
 - Bounded query AST with quoted phrases, boolean `NOT`/`AND`/`OR`, parentheses, exact/prefix/suffix modes, and metadata filters for extension, type, size, modification age, path substring, and root containment.
-- Fresh literal content scans of indexed regular files; content reads are not backed by a persistent content index.
+- Persistent content trigram candidate index for eligible regular text files (up to 512 KiB per file and 16 MiB aggregate per snapshot), with current-byte verification and stale/unindexed fallback scans.
 - Unix-domain socket protocol with bounded request/response sizes, owner-only socket permissions, search/content/stats/ping/shutdown commands.
 - Optional recursive inotify watches, event-triggered full scans, queue-overflow handling, and periodic reconciliation.
 - Unit tests for index postings and snapshot validation, plus CLI and daemon integration tests.
@@ -16,7 +16,7 @@
 
 ## Remaining target work
 
-- Persistent content candidate index with current-content verification and update/recovery semantics.
+- Improve content-index coverage and construction efficiency; large/over-budget files currently use fallback scans.
 - Regex and fuzzy matching/scoring are implemented. Fuzzy queries scan all indexed names and retain only the best limited result set; compound boolean queries and metadata filters also scan paths.
 - Bounded parallel client processing, timeouts/cancellation, and load testing.
 - Append-only update journal and snapshot compaction; establish whether benchmarks justify this complexity.

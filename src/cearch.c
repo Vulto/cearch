@@ -114,9 +114,13 @@ static bool LoadDatabase(const char *Database, FileTable *Table, CearchStore *St
             .Path = (char *)Path,
             .Size = Source->Size,
             .Mtime = Source->Mtime,
+            .MtimeNsec = Source->MtimeNsec,
+            .Ctime = Source->Ctime,
+            .CtimeNsec = Source->CtimeNsec,
             .Device = Source->Device,
             .Inode = Source->Inode,
-            .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o'
+            .Type = Source->Type == 1U ? 'f' : Source->Type == 2U ? 'd' : 'o',
+            .ContentIndexed = Source->Reserved[0] != 0U
         };
     }
     Table->OwnsPaths = false;
@@ -297,24 +301,82 @@ static bool FileContains(const char *Path, const char *Query) {
     return Match;
 }
 
+static bool ContentIndexFresh(const CearchFileEntry *Entry) {
+    if (!Entry || !Entry->ContentIndexed || Entry->Type != 'f') return false;
+    struct stat Status;
+    if (stat(Entry->Path, &Status) != 0 || !S_ISREG(Status.st_mode)) return false;
+    return (uint64_t)Status.st_size == Entry->Size &&
+           (int64_t)Status.st_mtim.tv_sec == Entry->Mtime &&
+           (uint32_t)Status.st_mtim.tv_nsec == Entry->MtimeNsec &&
+           (int64_t)Status.st_ctim.tv_sec == Entry->Ctime &&
+           (uint32_t)Status.st_ctim.tv_nsec == Entry->CtimeNsec &&
+           (uint64_t)Status.st_dev == Entry->Device &&
+           (uint64_t)Status.st_ino == Entry->Inode;
+}
+
 static bool ContentCommand(const char *Database, const char *Query, bool NullDelimited, size_t Limit) {
     FileTable Table = {0};
     CearchStore Store = { .Descriptor = -1 };
     if (!LoadDatabase(Database, &Table, &Store)) return false;
-    size_t Found = 0U;
-    for (size_t Index = 0U; Index < Table.Count; ++Index) {
-        const CearchFileEntry *Entry = &Table.Entries[Index];
-        if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
-        if (!PrintPath(Entry->Path, NullDelimited)) {
-            FreeTable(&Table);
-            CearchStoreClose(&Store);
-            return false;
-        }
-        if (++Found >= Limit) break;
+    CearchNameQuery Prepared = {0};
+    if (!CearchNameQueryPrepare(Query, &Prepared)) {
+        FreeTable(&Table);
+        CearchStoreClose(&Store);
+        return false;
     }
+
+    size_t Found = 0U;
+    bool Success = true;
+    if (Prepared.Count == 0U) {
+        for (size_t Index = 0U; Index < Table.Count && Found < Limit; ++Index) {
+            const CearchFileEntry *Entry = &Table.Entries[Index];
+            if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
+            if (!PrintPath(Entry->Path, NullDelimited)) { Success = false; break; }
+            ++Found;
+        }
+    } else {
+        CearchIndex ContentIndex = { .Entries = Table.Entries, .Count = Table.Count };
+        if (!CearchAttachNameIndex(&ContentIndex, Store.ContentTrigrams, Store.ContentTrigramCount,
+                                   nullptr, Store.ContentTrigramPostingCount,
+                                   Store.ContentTrigramData, Store.ContentTrigramDataSize,
+                                   Store.ContentTrigramSkips, Store.ContentTrigramSkipCount)) {
+            Success = false;
+        } else {
+            bool *Fresh = calloc(Table.Count ? Table.Count : 1U, sizeof(*Fresh));
+            if (!Fresh) Success = false;
+            if (Success) {
+                for (size_t Index = 0U; Index < Table.Count; ++Index)
+                    Fresh[Index] = ContentIndexFresh(&Table.Entries[Index]);
+                CearchNameCandidateIterator Iterator = {0};
+                if (!CearchNameCandidatesBegin(&ContentIndex, &Prepared, &Iterator)) {
+                    Success = false;
+                } else {
+                    uint32_t FileId = 0U;
+                    while (Success && Found < Limit &&
+                           CearchNameCandidatesNext(&Iterator, &FileId)) {
+                        if ((size_t)FileId >= Table.Count || !Fresh[FileId]) continue;
+                        const CearchFileEntry *Entry = &Table.Entries[FileId];
+                        if (!FileContains(Entry->Path, Query)) continue;
+                        if (!PrintPath(Entry->Path, NullDelimited)) { Success = false; break; }
+                        ++Found;
+                    }
+                    for (size_t Index = 0U; Success && Found < Limit && Index < Table.Count; ++Index) {
+                        const CearchFileEntry *Entry = &Table.Entries[Index];
+                        if (Entry->Type != 'f' || Fresh[Index] || !FileContains(Entry->Path, Query)) continue;
+                        if (!PrintPath(Entry->Path, NullDelimited)) { Success = false; break; }
+                        ++Found;
+                    }
+                }
+            }
+            free(Fresh);
+        }
+        CearchFreeNameIndex(&ContentIndex);
+    }
+
+    CearchNameQueryFree(&Prepared);
     FreeTable(&Table);
     CearchStoreClose(&Store);
-    return true;
+    return Success;
 }
 
 static bool StatsCommand(const char *Database) {

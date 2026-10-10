@@ -42,8 +42,8 @@ Use [docs/USAGE.md](docs/USAGE.md) for all options and [docs/ARCHITECTURE.md](do
 - Atomic, versioned binary snapshots with bounded mmap validation.
 - The daemon keeps a warm index in memory and uses Unix-domain sockets.
 - Recursive inotify watches mark the index dirty; event overflow and periodic full reconciliation are handled by rescanning roots and atomically replacing the snapshot.
-- Content matches are verified by reading current file contents; the content search is not yet a persistent inverted content index.
+- Content search uses persistent trigram candidates for eligible regular text files (up to 512 KiB per file and 16 MiB aggregate), verifies current bytes, and scans stale/unindexed files as fallback.
 
 ## Current scope
 
-The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. Persistent trigram postings are stored in the snapshot; content search remains a scan of current regular-file contents. An advanced query AST, fuzzy scoring, parallel client handling, and reproducible performance benchmarks remain future engineering work.
+The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. The snapshot stores filename and bounded content trigram postings. Name queries support boolean expressions, metadata predicates, POSIX regex, and typo-tolerant fuzzy ranking. Parallel client handling, broader content-index coverage, and reproducible performance benchmarks remain future engineering work.

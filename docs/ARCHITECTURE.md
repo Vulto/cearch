@@ -14,7 +14,7 @@ The shared `CearchBuildSnapshot` path is used by the CLI index command and daemo
 
 For query strings at least three bytes long, cearch produces unique ASCII-lowercased byte trigrams, finds postings, and uses posting membership to reject candidates before literal case-insensitive verification. Short queries use a scan. The index stores postings for all indexed paths, so basename matches remain candidates; the original query always verifies the final result.
 
-The snapshot stores sorted trigram metadata, delta-coded numeric file IDs, and skip checkpoints. Queries attach these arrays directly from the read-only mapping and decode candidate IDs without rebuilding the full posting index. The daemon retains the mapped snapshot across requests. The content index is not persistent: content queries read the current contents of indexed regular files.
+The snapshot stores sorted trigram metadata, delta-coded numeric file IDs, and skip checkpoints. Queries attach these arrays directly from the read-only mapping and decode candidate IDs without rebuilding the full posting index. The daemon retains the mapped snapshot across requests. The snapshot also stores a content trigram index for regular text files up to 512 KiB each and 16 MiB aggregate input per snapshot. Content search checks metadata freshness and verifies candidate bytes; large, over-budget, unreadable, or changed files are scanned as fallback. Files containing NUL bytes are excluded. Queries shorter than three bytes scan all regular files.
 
 ## Daemon and protocol
 
@@ -28,14 +28,14 @@ Without explicit roots, the daemon is read-only and does not infer root ownershi
 
 ## Query semantics and planned grammar
 
-Name queries support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, POSIX extended `regex:` terms, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, boolean `NOT`/`AND`/`OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions and metadata filters currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans.
+Name queries support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, POSIX extended `regex:` terms, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, boolean `NOT`/`AND`/`OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions and metadata filters currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal and case-sensitive. Persistent trigrams narrow candidates for eligible files; current bytes are always verified and stale/unindexed files are scanned as fallback.
 
 Fuzzy terms compare against alphanumeric filename tokens with bounded edit distance and rank by minimum distance. Regex terms are compiled once per query and malformed patterns are rejected. The parser rejects malformed expressions and bounds query length/token count rather than silently reinterpreting invalid input.
 
 ## Next architecture stages
 
 1. Establish repeatable benchmark baselines and profile indexing, name search, and content search before making performance claims.
-2. Add a persistent content candidate index with correct handling for edits, deletes, binary files, and interrupted updates.
+2. Improve content-index coverage and construction efficiency; current per-file and aggregate budgets preserve correctness through fallback scans but can leave large portions of a tree unindexed.
 3. Add bounded multi-client processing, deadlines/cancellation, protocol fuzzing, and load tests.
 4. Evaluate an append-only update journal and snapshot compaction against measured update costs; keep full reconciliation as the correctness fallback.
 5. Expand filesystem race tests, failure injection for snapshot writes, and malformed database fuzzing.

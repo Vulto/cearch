@@ -4,7 +4,7 @@
 
 ## Executive summary
 
-Cearch is a Linux-first C23 command-line indexer/searcher with a memory-mapped, versioned snapshot, an optional daemon/client interface, recursive inotify watches, and periodic reconciliation. Name-search trigram postings are persisted in the snapshot; content search remains a scan of current regular-file contents.
+Cearch is a Linux-first C23 command-line indexer/searcher with a memory-mapped, versioned snapshot, an optional daemon/client interface, recursive inotify watches, and periodic reconciliation. Name-search and bounded content trigram postings are persisted in the snapshot; content search verifies current bytes and falls back to scanning files outside the index coverage or with stale metadata.
 
 The existing smoke test covers a happy-path temporary tree, basic case-insensitive name search, path search, content search, stats, and a changed file after indexing. It does not currently establish malformed-database safety, atomic-write failure behavior, filesystem race behavior, content chunk-boundary behavior, limits, symlink policy, or performance.
 
@@ -13,10 +13,10 @@ The existing smoke test covers a happy-path temporary tree, basic case-insensiti
 - `src/cearch.c` performs a recursive walk, records metadata and paths, and loads the full snapshot into heap-allocated entries for each query.
 - `src/index.c` builds the trigram postings at indexing time; the current snapshot stores delta-coded posting data and skip checkpoints, which queries attach from the read-only mapping.
 - `src/store.c` writes a native-layout binary header and records, then uses a temporary file, `fsync`, and `rename`. The format currently has no explicit byte order or ABI-independent field encoding.
-- Content search reads current regular-file contents. It is a fresh scan, not a persistent content index.
+- Content search uses persistent trigrams for eligible regular text files (512 KiB per file, 16 MiB aggregate budget), verifies current bytes, and scans stale/unindexed files as fallback.
 - The CLI emits newline-delimited paths. A filename containing a newline is therefore ambiguous in output.
 - The only existing integration suite is `tests/smoke.sh`; CI previously built and ran that suite with GCC only.
-- Advanced query ASTs, fuzzy scoring, parallel client handling, and reproducible performance benchmarks remain future work.
+- Query ASTs, metadata predicates, POSIX regex, and fuzzy ranking are implemented. Parallel client handling, broader content-index coverage, and reproducible performance benchmarks remain future work.
 
 ## Findings and priorities
 

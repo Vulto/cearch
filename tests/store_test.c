@@ -24,6 +24,13 @@ typedef struct {
     uint64_t SkipOffset;
     uint64_t SkipCount;
     uint64_t FileIdCount;
+    uint64_t ContentTrigramOffset;
+    uint64_t ContentTrigramCount;
+    uint64_t ContentPostingDataOffset;
+    uint64_t ContentPostingDataSize;
+    uint64_t ContentSkipOffset;
+    uint64_t ContentSkipCount;
+    uint64_t ContentFileIdCount;
     uint64_t FileSize;
 } TestDiskHeader;
 
@@ -45,6 +52,8 @@ static void WriteValidSnapshot(const char *Database,
                                size_t SkipCount,
                                size_t PostingCount) {
     assert(CearchStoreWrite(Database, Entry, 1U, Path, strlen(Path) + 1U,
+                            Trigrams, TrigramCount, PostingData, PostingDataSize,
+                            Skips, SkipCount, PostingCount,
                             Trigrams, TrigramCount, PostingData, PostingDataSize,
                             Skips, SkipCount, PostingCount));
 }
@@ -85,6 +94,11 @@ int main(void) {
     assert(Store.TrigramData[0] == 0U);
     assert(Store.TrigramSkipCount == 1U);
     assert(Store.TrigramSkips[0].FileId == 0U);
+    assert(Store.ContentTrigramCount == 1U);
+    assert(Store.ContentTrigramPostingCount == 1U);
+    assert(Store.ContentTrigrams[0].Key == 0x616263U);
+    assert(Store.ContentTrigramDataSize == sizeof(PostingData));
+    assert(Store.ContentTrigramData[0] == 0U);
     CearchStoreClose(&Store);
 
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
@@ -114,6 +128,17 @@ int main(void) {
     CearchTrigramPosting BadPosting = Trigrams[0];
     BadPosting.Start = 1U;
     assert(pwrite(Descriptor, &BadPosting, sizeof(BadPosting), (off_t)Header.TrigramOffset) == (ssize_t)sizeof(BadPosting));
+    close(Descriptor);
+    ExpectRejected(Database);
+
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
+    Descriptor = open(Database, O_RDWR | O_CLOEXEC);
+    assert(Descriptor >= 0);
+    assert(pread(Descriptor, &Header, sizeof(Header), 0) == (ssize_t)sizeof(Header));
+    CearchTrigramPosting BadContentPosting = Trigrams[0];
+    BadContentPosting.Start = 1U;
+    assert(pwrite(Descriptor, &BadContentPosting, sizeof(BadContentPosting),
+                  (off_t)Header.ContentTrigramOffset) == (ssize_t)sizeof(BadContentPosting));
     close(Descriptor);
     ExpectRejected(Database);
 
