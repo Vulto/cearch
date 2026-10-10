@@ -19,12 +19,13 @@ typedef struct {
     uint64_t StringSize;
     uint64_t TrigramOffset;
     uint64_t TrigramCount;
-    uint64_t PostingOffset;
-    uint64_t PostingCount;
+    uint64_t PostingDataOffset;
+    uint64_t PostingDataSize;
+    uint64_t SkipOffset;
+    uint64_t SkipCount;
+    uint64_t FileIdCount;
     uint64_t FileSize;
-} TestDiskHeader;
-
-static void ExpectRejected(const char *Database) {
+} TestDiskHeader;tatic void ExpectRejected(const char *Database) {
     CearchStore Store = { .Descriptor = -1 };
     errno = 0;
     assert(!CearchStoreOpen(Database, &Store));
@@ -95,7 +96,7 @@ int main(void) {
     close(Descriptor);
     ExpectRejected(Database);
 
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(pread(Descriptor, &Header, sizeof(Header), 0) == (ssize_t)sizeof(Header));
@@ -104,7 +105,7 @@ int main(void) {
     close(Descriptor);
     ExpectRejected(Database);
 
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_RDWR | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(pread(Descriptor, &Header, sizeof(Header), 0) == (ssize_t)sizeof(Header));
@@ -114,7 +115,7 @@ int main(void) {
     close(Descriptor);
     ExpectRejected(Database);
 
-    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, FileIds, 1U);
+    WriteValidSnapshot(Database, &Entry, Path, Trigrams, 1U, PostingData, sizeof(PostingData), Skips, 1U, 1U);
     Descriptor = open(Database, O_WRONLY | O_CLOEXEC);
     assert(Descriptor >= 0);
     assert(ftruncate(Descriptor, 4) == 0);
