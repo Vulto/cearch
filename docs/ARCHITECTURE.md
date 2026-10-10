@@ -28,22 +28,18 @@ Without explicit roots, the daemon is read-only and does not infer root ownershi
 
 ## Query semantics and planned grammar
 
-Name queries now support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, `NOT`, `AND`, `OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans. Planned grammar extensions may add:
+Name queries support case-insensitive substring terms, quoted phrases, `exact:`, `prefix:`, `suffix:`, metadata filters `ext:`, `type:`, `size:`, `mtime:`, `path:`, `in:`, boolean `NOT`/`AND`/`OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions and metadata filters currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans.
 
-- regex and fuzzy-ranking modes;
-- fuzzy and regex modes;
-- boolean `AND`, `OR`, `NOT`, parentheses, and exclusion terms.
-
-Fuzzy ranking and regex remain unimplemented. The query parser rejects malformed expressions rather than silently reinterpreting them.
+Regex and fuzzy ranking remain planned. The parser rejects malformed expressions and bounds query length/token count rather than silently reinterpreting invalid input.
 
 ## Next architecture stages
 
 1. Establish repeatable benchmark baselines and profile indexing, name search, and content search before making performance claims.
-2. Add a validated query AST for boolean operators and metadata predicates; preserve the current substring query as the default behavior.
-3. Add a persistent content candidate index, always verifying current contents before reporting hits and defining how edits/deletions invalidate candidates.
-4. Add bounded multi-client concurrency, client deadlines/cancellation, protocol fuzzing, and load tests.
-5. Evaluate an append-only update journal and snapshot compaction against measured write/update costs; retain full reconciliation as the correctness fallback.
-6. Consider additional structured output formats if users need machine-readable metadata beyond NUL-delimited paths.
+2. Add a persistent content candidate index with correct handling for edits, deletes, binary files, and interrupted updates.
+3. Add bounded multi-client processing, deadlines/cancellation, protocol fuzzing, and load tests.
+4. Evaluate an append-only update journal and snapshot compaction against measured update costs; keep full reconciliation as the correctness fallback.
+5. Expand filesystem race tests, failure injection for snapshot writes, and malformed database fuzzing.
+6. Evaluate portable on-disk encoding and packaging/service integration only after compatibility and deployment requirements are defined.
 
 ## Non-goals
 
