@@ -237,26 +237,30 @@ static bool FileContains(const char *Path, const char *Query) {
 
 static bool ContentCommand(const char *Database, const char *Query, size_t Limit) {
     FileTable Table = {0};
-    if (!LoadDatabase(Database, &Table)) return false;
-    size_t Found = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
+    CearchStore Store = { .Descriptor = -1 };
+    if (!LoadDatabase(Database, &Table, &Store)) return false;
+    size_t Found = 0U;
+    for (size_t Index = 0U; Index < Table.Count; ++Index) {
         const CearchFileEntry *Entry = &Table.Entries[Index];
         if (Entry->Type != 'f' || !FileContains(Entry->Path, Query)) continue;
         if (puts(Entry->Path) == EOF) {
             FreeTable(&Table);
+            CearchStoreClose(&Store);
             return false;
         }
         if (++Found >= Limit) break;
     }
     FreeTable(&Table);
+    CearchStoreClose(&Store);
     return true;
 }
 
 static bool StatsCommand(const char *Database) {
     FileTable Table = {0};
-    if (!LoadDatabase(Database, &Table)) return false;
-    size_t Files = 0, Directories = 0, Other = 0;
-    for (size_t Index = 0; Index < Table.Count; ++Index) {
+    CearchStore Store = { .Descriptor = -1 };
+    if (!LoadDatabase(Database, &Table, &Store)) return false;
+    size_t Files = 0U, Directories = 0U, Other = 0U;
+    for (size_t Index = 0U; Index < Table.Count; ++Index) {
         if (Table.Entries[Index].Type == 'f') ++Files;
         else if (Table.Entries[Index].Type == 'd') ++Directories;
         else ++Other;
@@ -264,6 +268,7 @@ static bool StatsCommand(const char *Database) {
     printf("entries: %zu\nfiles: %zu\ndirectories: %zu\nother: %zu\n",
            Table.Count, Files, Directories, Other);
     FreeTable(&Table);
+    CearchStoreClose(&Store);
     return true;
 }
 
