@@ -320,11 +320,11 @@ bool CearchQueryParse(const char *Text, CearchQuery *Query) {
         errno = EINVAL;
         return false;
     }
+    CearchQueryFree(Query);
     if (strlen(Text) > CearchQueryMaximumLength) {
         errno = E2BIG;
         return false;
     }
-    CearchQueryFree(Query);
     CearchParser Parser = { .Cursor = Text, .Type = TokenEnd, .Text = NULL, .TokenCount = 0U };
     NextToken(&Parser);
     CearchQueryNode *Root = ParseOr(&Parser);
@@ -380,6 +380,7 @@ static bool MatchFilter(const CearchQueryNode *Node, const CearchFileEntry *Entr
     if (!Entry) return false;
     switch (Node->Type) {
         case CearchQueryFilterExtension: {
+            if (Entry->Type != 'f') return false;
             const char *Base = BaseName(Entry->Path);
             const char *Dot = strrchr(Base, '.');
             return Dot && Dot != Base && strcasecmp(Dot + 1, Node->Term) == 0;
