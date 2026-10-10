@@ -1,78 +1,80 @@
 # Quality Audit
 
-**Scope:** baseline audit findings from the repository state at audit time. This is a source-level audit; findings are not claims that every defect has been reproduced at runtime. See the current-state update at the end before treating a finding as unresolved.
+**Scope:** current Cearch implementation, including snapshot version 4, persistent filename/content postings, fuzzy/regex queries, and bounded daemon workers. Findings below distinguish verified implementation behavior from remaining risks.
 
 ## Executive summary
 
-Cearch is a Linux-first C23 command-line indexer/searcher with a memory-mapped, versioned snapshot, an optional daemon/client interface, recursive inotify watches, and periodic reconciliation. Name-search and bounded content trigram postings are persisted in the snapshot; content search verifies current bytes and falls back to scanning files outside the index coverage or with stale metadata.
+Cearch is a Linux-first C23 file index/search utility with a CLI and foreground daemon. The versioned mmap snapshot persists filename trigram postings and a bounded content trigram candidate index. The daemon reconciles watched roots, verifies content matches against current bytes, and serves clients concurrently through a capped worker set.
 
-The existing smoke test covers a happy-path temporary tree, basic case-insensitive name search, path search, content search, stats, and a changed file after indexing. It does not currently establish malformed-database safety, atomic-write failure behavior, filesystem race behavior, content chunk-boundary behavior, limits, symlink policy, or performance.
+The code now has meaningful unit and integration coverage, GCC/Clang warning-as-error builds, GCC static analysis, and ASan/UBSan in CI. The benchmark harness reports repeated query timings, indexing time, snapshot size, and peak indexing RSS. CI does not yet prove performance or correctness at million-file scale, under hostile filesystem races, or under every storage failure.
 
-## Confirmed implementation facts
+## Resolved baseline findings
 
-- `src/cearch.c` performs a recursive walk, records metadata and paths, and loads the full snapshot into heap-allocated entries for each query.
-- `src/index.c` builds the trigram postings at indexing time; the current snapshot stores delta-coded posting data and skip checkpoints, which queries attach from the read-only mapping.
-- `src/store.c` writes a native-layout binary header and records, then uses a temporary file, `fsync`, and `rename`. The format currently has no explicit byte order or ABI-independent field encoding.
-- Content search uses persistent trigrams for eligible regular text files (512 KiB per file, 16 MiB aggregate budget), verifies current bytes, and scans stale/unindexed files as fallback.
-- The CLI emits newline-delimited paths. A filename containing a newline is therefore ambiguous in output.
-- The only existing integration suite is `tests/smoke.sh`; CI previously built and ran that suite with GCC only.
-- Query ASTs, metadata predicates, POSIX regex, and fuzzy ranking are implemented. Parallel client handling, broader content-index coverage, and reproducible performance benchmarks remain future work.
+- **Path terminator bounds:** snapshot loading validates string-table bounds and in-table NUL terminators before exposing entries.
+- **Snapshot durability:** unique temporary files, file sync, atomic rename, and parent-directory sync are used for snapshot replacement.
+- **Incomplete scans:** traversal errors prevent replacing the active snapshot.
+- **Entry type aliasing:** indexing and query code use the shared CearchFileEntry type.
+- **Per-query name-index rebuild:** filename trigram postings, delta-coded IDs, and skip checkpoints are persisted and attached from the mmap snapshot.
+- **Content scan cost:** snapshot v4 includes bounded content trigram postings. Current bytes are verified and stale/unindexed files are scanned as fallback.
+- **Single-client blocking:** daemon requests run in detached worker threads, capped at 64 active clients, with socket I/O timeouts and a read/write lock around live snapshot access.
+- **CI coverage:** GCC and Clang warning-as-error builds, unit/integration tests, GCC static analysis, benchmark smoke test, and ASan/UBSan are required.
 
-## Findings and priorities
+## Open findings and risks
 
-### P0 — Snapshot path terminator validation can read beyond the mapped string table
+### P1 — Content index coverage is intentionally bounded
 
-In `CearchStorePath`, the bounds condition permits `PathOffset + PathLength == StringsSize`, then reads `Strings[StringsSize]`. That byte is outside the mapped string table and can be outside the mapping entirely. The writer produces NUL-terminated paths, but a malformed or hostile database can exercise this reader. Validation must require the terminator position to be strictly inside the string table, and the loader should validate every path before exposing the snapshot.
+Only regular text files up to 512 KiB each and within a 16 MiB aggregate indexing budget receive persistent content postings. Larger, over-budget, unreadable, or stale files use a correctness fallback scan. This avoids unbounded index-construction memory but can make content queries slow on large trees. Benchmark the coverage/latency tradeoff before raising limits or changing the index representation.
 
-### P1 — Snapshot durability is not fully crash-durable
+### P1 — Snapshot encoding is native-layout
 
-The snapshot file is synced before rename, but the containing directory is not synced after rename. A successful return therefore does not guarantee that the renamed directory entry survives sudden power loss on all filesystems. The temporary filename is PID-based and opened with `O_EXCL`; a stale temporary file can make indexing fail. These are reliability limitations, not evidence that ordinary rename replacement is non-atomic.
+The snapshot writes fixed-width C records in host byte order and native ABI layout. Version checks reject incompatible snapshots but do not make them portable across architectures, compiler ABIs, or endianness. Snapshot v4 also requires older database files to be rebuilt with cearch index.
 
-### P1 — Filesystem traversal errors can produce an apparently successful incomplete index
+### P1 — Content freshness relies on filesystem metadata
 
-Stat/open/readdir failures are printed but traversal continues and can still return success. This behavior may be useful for best-effort indexing, but callers cannot distinguish a complete scan from a partial scan using the exit code alone. The CLI needs an explicit and documented policy: fail on traversal errors or return a distinct partial-success status/report.
+Freshness checks compare size, device/inode, and nanosecond mtime/ctime. This detects normal edits and replacements, but does not provide a cryptographic content identity if an external process can restore metadata or if a filesystem lacks sufficient timestamp precision. A content hash would improve certainty at additional indexing and storage cost.
 
-### P1 — The in-memory index representation uses incompatible struct types
+### P2 — CLI searches still load path metadata into heap memory
 
-`src/cearch.c` casts an array of private `FileEntry` objects to `CearchFileEntry *` before the index code reads it. The current fields are laid out identically, but the types are distinct; accessing an object through an incompatible struct type is not a sound C aliasing contract. Move the shared entry type into a header and use that exact type in both modules.
+The posting lists are mapped, but one-shot CLI invocations load entry metadata and allocate path copies before querying. Memory use therefore still grows with indexed entry count. Measure resident memory at representative scales before claiming suitability for tens of millions of files.
 
-### P1 — Content scan has underspecified error and binary semantics
+### P2 — Complex and fuzzy queries scan the entry set
 
-Unreadable files and read errors are silently treated as non-matches. A NUL byte anywhere in a read chunk causes the file to be skipped, even if a matching literal occurs earlier in that same chunk; this is consistent with a conservative text-only policy but should be explicit and tested. A read error after partial data is currently indistinguishable from EOF.
+Simple filename terms use persisted postings. Boolean expressions, metadata predicates, regex, and fuzzy terms scan entries; fuzzy ranking uses a bounded top-K heap, so result storage is bounded by the requested limit, but CPU cost remains linear in the index size.
 
-### P2 — Search performance is not yet the target architecture
+### P2 — Content read errors are not surfaced as distinct results
 
-Each search loads all records, allocates path copies, builds all path trigrams, sorts all trigram pairs, and then scans entries. The trigram structure reduces some verification work but is rebuilt on every invocation and candidate checks are performed per entry. This should not be described as a persistent index or as low-latency search over millions of paths without benchmarks.
+Unreadable files and read errors do not become matches, but the CLI does not provide a per-file error report. Files containing NUL bytes are deliberately excluded from content search. This policy is documented, but additional tests should cover read failures and chunk boundaries.
 
-### P2 — Snapshot format is native-layout, not portable
+### P2 — Newline output is ambiguous for valid filenames
 
-The file stores C structs directly, including host endianness and compiler ABI layout. Versioning detects some incompatibility but does not make the format portable across architectures/ABIs. Define field widths, byte order, alignment, and reserved-field validation before promising portable durable databases.
+Default output is newline-delimited. The --null option provides an unambiguous machine-readable path stream, but the default remains intended for interactive use and there is no JSON output format.
 
-### P2 — Output and command contracts need more tests
+### P2 — Worker saturation and cancellation need deeper testing
 
-Newline-delimited paths cannot unambiguously represent every valid Linux filename. CLI parsing, zero/large limits, empty queries, overlapping roots, symlink roots, unreadable entries, malformed snapshots, and interrupted writes need regression coverage.
+The daemon caps active workers at 64 and sets 10-second socket I/O timeouts. Concurrent requests and partial-request isolation are covered by integration tests. Sustained saturation, slow readers, shutdown under load, and cancellation of expensive search work still need stress testing. A worker holding a state read lock during request handling can delay snapshot reconciliation until that request finishes or times out.
 
-## Required remediation order
+### P2 — Performance evidence is still incomplete
 
-1. Fix snapshot string bounds and validate malformed snapshots.
-2. Share the file-entry type across modules to remove the incompatible-struct cast.
-3. Add focused unit tests for trigram candidates and snapshot validation, plus integration regressions for limits, symlinks, chunk boundaries, and corrupted database files.
-4. Make traversal and content-read failure semantics explicit and testable.
-5. Run GCC and Clang builds, unit/integration tests, sanitizers, and static analysis in CI.
-6. Benchmark representative small, medium, and large trees before changing data structures. Preserve CLI semantics with regression tests as the persistent index is introduced.
+The benchmark harness is repeatable and reports samples/median, indexing time, snapshot size, and peak RSS. CI runs only a small smoke dataset. No trustworthy million-file benchmark report has yet been recorded with hardware, filesystem, compiler flags, and cache conditions.
+
+### P2 — Failure injection and filesystem race coverage are incomplete
+
+Dedicated tests are still needed for write/fsync/rename failures, stale temporary files, overlapping roots, symlink policy, permission changes, rapid replace/rename races, malformed snapshot fuzzing, and worker saturation.
+
+## Required next work
+
+1. Record repeatable small/medium/large benchmark results, including indexing time, peak RSS, snapshot bytes, name-query latency, content-query latency, and fuzzy/regex costs.
+2. Tune content-index coverage based on measurements; preserve fallback correctness.
+3. Add failure injection for snapshot writes and fuzz malformed snapshot inputs.
+4. Stress daemon worker saturation, shutdown, and reconciliation while clients are active.
+5. Decide whether portable on-disk encoding and structured output are requirements for the intended release.
+6. Revisit the append-only update journal only if full reconciliation costs justify the complexity.
 
 ## Acceptance criteria
 
-- Every CI job fails on compile warnings promoted to errors, test failures, sanitizer findings, or static-analysis failures.
-- Unit tests exercise index/store logic without requiring a user filesystem or external dependencies.
-- Integration tests use isolated temporary directories and assert exact output/exit status where output is part of the contract.
-- Documentation labels implemented, partially implemented, and planned behavior separately.
-- Performance claims include dataset shape, hardware, command, warm/cold-cache conditions, and repeatable measurements.
-- CI passing is evidence for the checks actually run; it is not proof of daemon, watcher, million-file performance, or filesystem-race correctness.
-
-
-## Current-state update: persisted postings and CI
-
-The baseline findings above describe the older implementation and should not all be read as current defects. The current branch now has a version-3 snapshot format with aligned posting data, delta-coded file IDs, skip checkpoints, and mapped-index attachment. The loader validates the snapshot layout, posting boundaries, delta streams, and checkpoint metadata before exposing the mapping. The path terminator check also requires the terminator to remain inside the string table.
-
-The current CI workflow builds with GCC and Clang using warnings as errors and runs unit/integration tests plus AddressSanitizer and UndefinedBehaviorSanitizer. The posting-format changes passed all three jobs. Snapshot writes now use unique temporary files, sync file contents, atomically rename, and sync the parent directory. Remaining audit items—especially content-search error/binary behavior, newline-delimited output ambiguity, and load/performance benchmarks—still require independent review and tests.
+- CI fails on warnings promoted to errors, unit/integration failures, sanitizer findings, or static-analysis failures.
+- Unit tests cover index and snapshot invariants without relying on the user's filesystem.
+- Integration tests use temporary trees and verify observable output/exit behavior.
+- Every documented limitation is either tested or explicitly marked as unverified.
+- Performance claims include dataset shape, hardware, compiler flags, filesystem, cache state, and repeatable measurements.
+- Passing CI is evidence only for the checks it runs; it is not proof of large-scale performance or complete filesystem-race safety.
