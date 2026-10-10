@@ -179,12 +179,30 @@ void CearchFreeNameIndex(CearchIndex *Index) {
     Index->TrigramPostingCount = 0;
 }
 
+bool CearchNameQueryPrepare(const char *Query, CearchNameQuery *Prepared) {
+    if (!Prepared || !Query) return false;
+    Prepared->Keys = nullptr;
+    Prepared->Count = 0;
+    return QueryTrigramKeys(Query, &Prepared->Keys, &Prepared->Count);
+}
+
+void CearchNameQueryFree(CearchNameQuery *Prepared) {
+    if (!Prepared) return;
+    free(Prepared->Keys);
+    Prepared->Keys = nullptr;
+    Prepared->Count = 0;
+}
+
+bool CearchNameCandidatePrepared(const CearchIndex *Index, const CearchNameQuery *Query, uint32_t FileId) {
+    if (!Index || !Query) return false;
+    if (!Query->Count) return true;
+    return HasAllQueryTrigrams(Index, FileId, Query->Keys, Query->Count);
+}
+
 bool CearchNameCandidate(CearchIndex *Index, const char *Query, uint32_t FileId) {
-    uint32_t *Keys = nullptr;
-    size_t KeyCount = 0;
-    if (!QueryTrigramKeys(Query, &Keys, &KeyCount)) return false;
-    bool Match = true;
-    if (KeyCount) Match = HasAllQueryTrigrams(Index, FileId, Keys, KeyCount);
-    free(Keys);
+    CearchNameQuery Prepared = {0};
+    if (!CearchNameQueryPrepare(Query, &Prepared)) return false;
+    bool Match = CearchNameCandidatePrepared(Index, &Prepared, FileId);
+    CearchNameQueryFree(&Prepared);
     return Match;
 }

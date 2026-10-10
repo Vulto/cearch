@@ -1,44 +1,48 @@
 # cearch
 
-**cearch** is a pure CLI Linux file-search utility written in C23. It is designed around a daemon/client architecture, compact integer file IDs, a trigram name index, and filesystem reconciliation.
+**cearch** is a Linux-first file index and search utility written in C23. It provides a CLI indexer, a persistent mmap snapshot, and an optional local daemon/client interface.
 
-This repository starts with a working baseline and grows incrementally. Correctness and buildability are prioritized over unmeasured performance claims.
+## Build and test
 
-## Build
-
-Requirements: a C23-capable compiler (recent GCC or Clang), GNU Make, and Linux.
+Requirements: Linux, GCC or Clang with C2x support, and Make.
 
 ```sh
 make
 make test
 ```
 
-The project aims to avoid mandatory third-party dependencies. The current baseline uses libc and Linux/POSIX APIs.
-
 ## Quick start
 
 ```sh
-# Index a tree into a local database
-./cearch index --db ~/.local/state/cearch/index /home/me
+Root="$HOME/Documents"
+Db="$HOME/.local/state/cearch/index.db"
 
-# Search indexed paths
-./cearch search --db ~/.local/state/cearch/index notes
+# Build or refresh the index snapshot
+mkdir -p "$Root" "$(dirname "$Db")"
+./cearch index --db "$Db" "$Root"
 
-# Search exact case-sensitive text in file contents (freshly reads candidate files)
-./cearch content --db ~/.local/state/cearch/index 'needle'
+# Start the daemon in the foreground and keep this root reconciled
+./cearchd serve --db "$Db" --root "$Root"
+
+# In another terminal
+./cearchd client search notes
+./cearchd client content 'literal text'
+./cearchd client stats
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/USAGE.md](docs/USAGE.md), [docs/AUDIT.md](docs/AUDIT.md), and [docs/TESTING.md](docs/TESTING.md).
+The default socket is `$XDG_RUNTIME_DIR/cearch.sock`. It is restricted to the current user. Pass `--socket PATH` to both daemon and client to use a custom path.
 
-## Design constraints
+Use [docs/USAGE.md](docs/USAGE.md) for all options and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation boundaries.
 
-- C23, CLI-first, suitable for Gentoo and Arch Linux.
-- Dense file IDs and offsets instead of per-entry heap object graphs.
-- Name search via trigram postings and exact verification.
-- Filesystem notifications are hints, not a source of truth. Reconciliation recovers missed events.
-- Content hits are verified against current file contents before being returned.
-- No unsupported claim that an index is perfectly current merely because inotify is enabled.
+## Design
 
-## Status
+- C23-compatible, Linux/POSIX APIs, no mandatory third-party libraries.
+- Dense numeric file IDs and compact trigram posting lists for name-query candidate reduction.
+- Atomic, versioned binary snapshots with bounded mmap validation.
+- The daemon keeps a warm index in memory and uses Unix-domain sockets.
+- Recursive inotify watches mark the index dirty; event overflow and periodic full reconciliation are handled by rescanning roots and atomically replacing the snapshot.
+- Content matches are verified by reading current file contents; the content search is not yet a persistent inverted content index.
 
-The initial implementation is deliberately conservative: one-shot index/search commands, a versioned native-layout binary snapshot, in-memory trigram candidate generation, literal content verification, and tests. The snapshot is not yet portable across ABIs or endianness. A long-running daemon, concurrent query workers, durable inverted content index, compressed mmap snapshots, and robust watch management are follow-on work and are documented as such.
+## Current scope
+
+The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. A persistent on-disk trigram/content posting index, advanced query AST, fuzzy scoring, and parallel client handling remain future engineering work. Performance claims require reproducible benchmarks and are not inferred from CI alone.

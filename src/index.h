@@ -21,6 +21,11 @@ typedef struct {
 } CearchTrigramPosting;
 
 typedef struct {
+    uint32_t *Keys;
+    size_t Count;
+} CearchNameQuery;
+
+typedef struct {
     CearchFileEntry *Entries;
     size_t Count;
     size_t Capacity;
@@ -32,6 +37,9 @@ typedef struct {
 
 bool CearchBuildNameIndex(CearchIndex *Index);
 void CearchFreeNameIndex(CearchIndex *Index);
+bool CearchNameQueryPrepare(const char *Query, CearchNameQuery *Prepared);
+void CearchNameQueryFree(CearchNameQuery *Prepared);
+bool CearchNameCandidatePrepared(const CearchIndex *Index, const CearchNameQuery *Query, uint32_t FileId);
 bool CearchNameCandidate(CearchIndex *Index, const char *Query, uint32_t FileId);
 
 #endif
