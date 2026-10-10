@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 static bool Matches(const char *QueryText, const char *Text) {
@@ -72,6 +73,9 @@ int main(void) {
     };
     assert(MatchesEntry("ext:txt", &Entry, "example.txt"));
     assert(!MatchesEntry("ext:md", &Entry, "example.txt"));
+    CearchFileEntry DirectoryEntry = Entry;
+    DirectoryEntry.Type = 'd';
+    assert(!MatchesEntry("ext:txt", &DirectoryEntry, "example.txt"));
     assert(MatchesEntry("type:file", &Entry, "example.txt"));
     assert(!MatchesEntry("type:dir", &Entry, "example.txt"));
     assert(MatchesEntry("size:>10mb", &Entry, "example.txt"));
@@ -87,6 +91,21 @@ int main(void) {
     Entry.Type = 'd';
     assert(MatchesEntry("type:dir", &Entry, "example.txt"));
     assert(MatchesEntry("in:/", &Entry, "example.txt"));
+    char TooLong[4098];
+    memset(TooLong, 'a', sizeof(TooLong) - 1U);
+    TooLong[sizeof(TooLong) - 1U] = '\0';
+    Rejects(TooLong);
+    char ManyTokens[512];
+    size_t Offset = 0U;
+    for (size_t Index = 0U; Index < 70U; ++Index) {
+        if (Index != 0U) {
+            memcpy(ManyTokens + Offset, " OR ", 4U);
+            Offset += 4U;
+        }
+        ManyTokens[Offset++] = 'a';
+    }
+    ManyTokens[Offset] = '\0';
+    Rejects(ManyTokens);
     CearchQueryFree(&Query);
     puts("cearch query unit tests passed");
     return 0;
