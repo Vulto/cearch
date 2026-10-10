@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "index.h"
+#include "query.h"
 #include "store.h"
 #include "indexer.h"
 #include <dirent.h>
@@ -149,16 +150,27 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
                                nullptr, Store.TrigramPostingCount,
                                Store.TrigramData, Store.TrigramDataSize,
                                Store.TrigramSkips, Store.TrigramSkipCount)) {
-        fprintf(stderr, "cearch: invalid persisted trigram index\n");
+        fprintf(stderr, "cearch: invalid persisted trigram index\\n");
         FreeTable(&Table);
         CearchStoreClose(&Store);
         return false;
     }
 
+    CearchQuery ParsedQuery = {0};
+    if (!CearchQueryParse(Query, &ParsedQuery)) {
+        fprintf(stderr, "cearch: invalid query expression\\n");
+        CearchFreeNameIndex(&Index);
+        FreeTable(&Table);
+        CearchStoreClose(&Store);
+        return false;
+    }
+    const char *SimpleTerm = CearchQuerySimpleTerm(&ParsedQuery);
     CearchNameQuery Prepared = {0};
     CearchNameCandidateIterator Iterator = {0};
-    if (!CearchNameQueryPrepare(Query, &Prepared) ||
-        !CearchNameCandidatesBegin(&Index, &Prepared, &Iterator)) {
+    if (SimpleTerm &&
+        (!CearchNameQueryPrepare(SimpleTerm, &Prepared) ||
+         !CearchNameCandidatesBegin(&Index, &Prepared, &Iterator))) {
+        CearchQueryFree(&ParsedQuery);
         CearchNameQueryFree(&Prepared);
         CearchFreeNameIndex(&Index);
         FreeTable(&Table);
@@ -167,14 +179,23 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
     }
 
     size_t Found = 0U;
+    size_t ScanIndex = 0U;
     uint32_t FileId = 0U;
-    while (Found < Limit && CearchNameCandidatesNext(&Iterator, &FileId)) {
-        size_t EntryIndex = (size_t)FileId;
+    while (Found < Limit) {
+        size_t EntryIndex;
+        if (SimpleTerm) {
+            if (!CearchNameCandidatesNext(&Iterator, &FileId)) break;
+            EntryIndex = (size_t)FileId;
+        } else {
+            if (ScanIndex >= Table.Count) break;
+            EntryIndex = ScanIndex++;
+        }
         if (EntryIndex >= Table.Count) continue;
         const CearchFileEntry *Entry = &Table.Entries[EntryIndex];
         const char *Haystack = MatchPath ? Entry->Path : BaseName(Entry->Path);
-        if (!ContainsCaseInsensitive(Haystack, Query)) continue;
+        if (!CearchQueryMatches(&ParsedQuery, Haystack)) continue;
         if (!PrintPath(Entry->Path, NullDelimited)) {
+            CearchQueryFree(&ParsedQuery);
             CearchNameQueryFree(&Prepared);
             CearchFreeNameIndex(&Index);
             FreeTable(&Table);
@@ -184,6 +205,7 @@ static bool SearchCommand(const char *Database, const char *Query, bool MatchPat
         ++Found;
     }
 
+    CearchQueryFree(&ParsedQuery);
     CearchNameQueryFree(&Prepared);
     CearchFreeNameIndex(&Index);
     FreeTable(&Table);
