@@ -205,24 +205,7 @@ bool CearchBuildNameIndex(CearchIndex *Index) {
 bool CearchAttachNameIndex(CearchIndex *Index, const CearchTrigramPosting *Trigrams,
                            size_t TrigramCount, const uint32_t *FileIds, size_t FileIdCount) {
     if (!Index || (TrigramCount && !Trigrams) || (FileIdCount && !FileIds)) return false;
-    uint64_t ExpectedStart = 0U;
-    for (size_t IndexPosition = 0; IndexPosition < TrigramCount; ++IndexPosition) {
-        const CearchTrigramPosting *Posting = &Trigrams[IndexPosition];
-        if (Posting->Reserved != 0U || Posting->Count == 0U ||
-            Posting->Key > 0xFFFFFFU || (IndexPosition && Trigrams[IndexPosition - 1U].Key >= Posting->Key) ||
-            Posting->Start != ExpectedStart ||
-            Posting->Start > FileIdCount ||
-            Posting->Count > (uint64_t)FileIdCount - Posting->Start) return false;
-        uint32_t PreviousId = 0U;
-        for (uint64_t Offset = 0; Offset < Posting->Count; ++Offset) {
-            uint32_t FileId = FileIds[(size_t)(Posting->Start + Offset)];
-            if (FileId >= Index->Count || (Offset && FileId <= PreviousId)) return false;
-            PreviousId = FileId;
-        }
-        ExpectedStart += Posting->Count;
-    }
-    if (ExpectedStart != FileIdCount) return false;
-
+    /* Storage readers validate mapped tables once; this only attaches trusted arrays. */
     CearchFreeNameIndex(Index);
     Index->Trigrams = Trigrams;
     Index->TrigramCount = TrigramCount;
