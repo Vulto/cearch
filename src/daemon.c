@@ -212,13 +212,6 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
     if (!Result) return false;
     size_t Length = 0;
     uint32_t Matches = 0;
-    size_t QueryLength = strlen(Query);
-    bool UseTrigrams = QueryLength >= 3U && !MatchPath;
-    CearchNameQuery Prepared = {0};
-    if (UseTrigrams && !CearchNameQueryPrepare(Query, &Prepared)) {
-        free(Result);
-        return false;
-    }
     for (size_t Index = 0; Index < Daemon->EntryCount && Matches < Limit; ++Index) {
         const CearchFileEntry *Entry = &Daemon->Entries[Index];
         const char *Base = strrchr(Entry->Path, '/');
@@ -227,7 +220,6 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
-            CearchNameQueryFree(&Prepared);
             free(Result);
             return false;
         }
@@ -236,7 +228,6 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
             size_t Next = Capacity;
             while (Next < Needed) {
                 if (Next > SIZE_MAX / 2U) {
-                    CearchNameQueryFree(&Prepared);
                     free(Result);
                     return false;
                 }
@@ -244,7 +235,6 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
             }
             char *NewResult = realloc(Result, Next);
             if (!NewResult) {
-                CearchNameQueryFree(&Prepared);
                 free(Result);
                 return false;
             }
@@ -256,7 +246,6 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         Result[Length++] = '\n';
         ++Matches;
     }
-    CearchNameQueryFree(&Prepared);
     *Output = Result;
     *OutputLength = Length;
     *Found = Matches;
