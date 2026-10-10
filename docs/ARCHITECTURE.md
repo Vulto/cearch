@@ -26,9 +26,9 @@ When started with `--root ROOT` arguments, the daemon adds recursive inotify wat
 
 Without explicit roots, the daemon is read-only and does not infer root ownership from indexed paths.
 
-## Current query semantics and planned grammar
+## Query semantics and planned grammar
 
-Implemented commands perform case-insensitive substring matching for names and literal, case-sensitive substring matching for content. The planned grammar may add:
+Name queries now support case-insensitive substring terms, quoted phrases, `NOT`, `AND`, `OR`, and parentheses. Precedence is `NOT`, then `AND`, then `OR`; operators are explicit. Simple terms use persisted trigram postings. Compound expressions currently scan paths and evaluate the AST, so complex-query performance requires benchmarking. Content queries remain literal, case-sensitive scans. Planned grammar extensions may add:
 
 - `ext:c`, `type:file`, `type:dir`;
 - `size:>10mb`, `mtime:<7d`, `path:/home/me`, and `in:/some/root`;

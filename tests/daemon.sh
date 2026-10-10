@@ -25,6 +25,8 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" ping >/dev/null 2>&1;
 done
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/search"
 grep -q '/needle.txt$' "$TempDir/search"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" search 'needle AND txt' > "$TempDir/and"
+grep -q '/needle.txt$' "$TempDir/and"
 printf '%s\0' "$OddPath" > "$TempDir/expected-null"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" search --null odd > "$TempDir/actual-null"
 cmp "$TempDir/expected-null" "$TempDir/actual-null"
