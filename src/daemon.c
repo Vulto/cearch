@@ -819,12 +819,18 @@ int main(int Argc, char **Argv) {
 
     if (strcmp(Argv[1], "serve") == 0) {
         const char *Database = nullptr;
+        const char **Roots = calloc((size_t)Argc, sizeof(*Roots));
+        if (!Roots) return 1;
+        size_t RootCount = 0;
         for (int Index = 2; Index < Argc; ++Index) {
-            if (strcmp(Argv[Index], "--db") == 0 && Index + 1 < Argc && !Database)
+            if (strcmp(Argv[Index], "--db") == 0 && Index + 1 < Argc && !Database) {
                 Database = Argv[++Index];
-            else if (strcmp(Argv[Index], "--socket") == 0 && Index + 1 < Argc)
+            } else if (strcmp(Argv[Index], "--socket") == 0 && Index + 1 < Argc) {
                 SocketPath = Argv[++Index];
-            else {
+            } else if (strcmp(Argv[Index], "--root") == 0 && Index + 1 < Argc) {
+                Roots[RootCount++] = Argv[++Index];
+            } else {
+                free(Roots);
                 Usage(stderr);
                 return 2;
             }
@@ -835,10 +841,12 @@ int main(int Argc, char **Argv) {
         }
         if (!Database || !SocketPath) {
             Usage(stderr);
+            free(Roots);
             free(DefaultPath);
             return 2;
         }
-        int Result = RunDaemon(Database, SocketPath);
+        int Result = RunDaemon(Database, SocketPath, Roots, RootCount);
+        free(Roots);
         free(DefaultPath);
         return Result;
     }
