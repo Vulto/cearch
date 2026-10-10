@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eux
+set -eu
 Daemon=${1:-./cearchd}
 TempDir=$(mktemp -d)
 DaemonPid=
@@ -20,7 +20,7 @@ until "$Daemon" client --socket "$TempDir/run/cearch.sock" ping >/dev/null 2>&1;
     if [ "$Attempts" -ge 50 ]; then echo 'daemon failed to start' >&2; exit 1; fi
     sleep 0.1
 done
-"$Daemon" client --socket "$TempDir/run/cearch.sock" search daemon_query_marker > "$TempDir/search"
+"$Daemon" client --socket "$TempDir/run/cearch.sock" search needle > "$TempDir/search"
 grep -q '/needle.txt$' "$TempDir/search"
 "$Daemon" client --socket "$TempDir/run/cearch.sock" content daemon_query_marker > "$TempDir/content"
 grep -q '/needle.txt$' "$TempDir/content"
