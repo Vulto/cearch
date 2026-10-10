@@ -1,12 +1,13 @@
 #ifndef CEARCH_STORE_H
 #define CEARCH_STORE_H
 
+#include "index.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <inttypes.h>
 
-#define CearchStoreVersion 1U
+#define CearchStoreVersion 2U
 
 typedef struct {
     uint32_t PathOffset;
@@ -27,10 +28,17 @@ typedef struct {
     size_t EntryCount;
     const char *Strings;
     size_t StringsSize;
+    const CearchTrigramPosting *Trigrams;
+    size_t TrigramCount;
+    const uint32_t *TrigramFileIds;
+    size_t TrigramPostingCount;
 } CearchStore;
 
-bool CearchStoreWrite(const char *Database, const CearchDiskEntry *Entries,
-                      size_t EntryCount, const char *Strings, size_t StringsSize);
+bool CearchStoreWrite(const char *Database,
+                      const CearchDiskEntry *Entries, size_t EntryCount,
+                      const char *Strings, size_t StringsSize,
+                      const CearchTrigramPosting *Trigrams, size_t TrigramCount,
+                      const uint32_t *TrigramFileIds, size_t TrigramPostingCount);
 bool CearchStoreOpen(const char *Database, CearchStore *Store);
 void CearchStoreClose(CearchStore *Store);
 const char *CearchStorePath(const CearchStore *Store, size_t EntryIndex);
