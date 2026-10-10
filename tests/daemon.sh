@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eu
+set -eux
 Daemon=${1:-./cearchd}
 TempDir=$(mktemp -d)
 DaemonPid=
