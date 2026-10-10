@@ -374,22 +374,28 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
     size_t Capacity = 4096U;
     char *Result = malloc(Capacity);
     if (!Result) return false;
-    size_t Length = 0;
-    uint32_t Matches = 0;
-    size_t QueryLength = strlen(Query);
+
+    size_t Length = 0U;
+    uint32_t Matches = 0U;
     CearchNameQuery Prepared = {0};
-    bool UseTrigrams = QueryLength >= 3U && !MatchPath;
-    if (UseTrigrams && !CearchNameQueryPrepare(Query, &Prepared)) {
+    CearchNameCandidateIterator Iterator = {0};
+    if (!CearchNameQueryPrepare(Query, &Prepared) ||
+        !CearchNameCandidatesBegin(&Daemon->NameIndex, &Prepared, &Iterator)) {
+        CearchNameQueryFree(&Prepared);
         free(Result);
         return false;
     }
-    for (size_t Index = 0; Index < Daemon->EntryCount && Matches < Limit; ++Index) {
-        const CearchFileEntry *Entry = &Daemon->Entries[Index];
+
+    uint32_t FileId = 0U;
+    while (Matches < Limit && CearchNameCandidatesNext(&Iterator, &FileId)) {
+        size_t EntryIndex = (size_t)FileId;
+        if (EntryIndex >= Daemon->EntryCount) continue;
+        const CearchFileEntry *Entry = &Daemon->Entries[EntryIndex];
         const char *Base = strrchr(Entry->Path, '/');
         Base = Base ? Base + 1 : Entry->Path;
         const char *Haystack = MatchPath ? Entry->Path : Base;
         if (!ContainsCaseInsensitive(Haystack, Query)) continue;
-        if (UseTrigrams && !CearchNameCandidatePrepared(&Daemon->NameIndex, &Prepared, (uint32_t)Index)) continue;
+
         size_t PathLength = strlen(Entry->Path);
         if (PathLength > SIZE_MAX - Length - 1U) {
             CearchNameQueryFree(&Prepared);
@@ -421,6 +427,7 @@ static bool SearchName(CearchDaemon *Daemon, const char *Query, uint32_t Limit,
         Result[Length++] = '\n';
         ++Matches;
     }
+
     CearchNameQueryFree(&Prepared);
     *Output = Result;
     *OutputLength = Length;
