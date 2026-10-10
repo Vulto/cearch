@@ -5,14 +5,15 @@ Program=${1:-./cearch}
 TempDir=$(mktemp -d)
 trap 'rm -rf "$TempDir"' EXIT HUP INT TERM
 
-mkdir -p "$TempDir/root/sub" "$TempDir/dbdir" "$TempDir/root/folder"
+mkdir -p "$TempDir/root/sub" "$TempDir/root/folder" "$TempDir/dbdir"
 printf 'hello from cearch\nsecond line\n' > "$TempDir/root/needle.txt"
 printf 'unique_content_token\n' > "$TempDir/root/sub/readme.md"
 printf 'nothing here\n' > "$TempDir/root/other.txt"
+printf 'alpha-alpha repeated\n' > "$TempDir/root/ALPHA.txt"
 
 "$Program" index --db "$TempDir/dbdir/index.db" "$TempDir/root"
 "$Program" stats --db "$TempDir/dbdir/index.db" > "$TempDir/stats"
-grep -q '^files: 3$' "$TempDir/stats"
+grep -q '^files: 4$' "$TempDir/stats"
 grep -q '^directories: 3$' "$TempDir/stats"
 
 "$Program" search --db "$TempDir/dbdir/index.db" needle > "$TempDir/name"
@@ -20,6 +21,12 @@ grep -q '/needle.txt$' "$TempDir/name"
 
 "$Program" search --db "$TempDir/dbdir/index.db" --path sub > "$TempDir/path"
 grep -q '/sub/readme.md$' "$TempDir/path"
+
+"$Program" search --db "$TempDir/dbdir/index.db" ALPHA > "$TempDir/case"
+grep -q '/ALPHA.txt$' "$TempDir/case"
+
+"$Program" search --db "$TempDir/dbdir/index.db" aaaaa > "$TempDir/repeated"
+test ! -s "$TempDir/repeated"
 
 "$Program" content --db "$TempDir/dbdir/index.db" unique_content_token > "$TempDir/content"
 grep -q '/sub/readme.md$' "$TempDir/content"
