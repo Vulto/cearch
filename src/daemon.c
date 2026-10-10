@@ -58,7 +58,7 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database);
 static void FreeDaemonIndex(CearchDaemon *Daemon);
 
 static volatile sig_atomic_t SignalStopRequested = 0;
-static atomic_bool ClientStopRequested = ATOMIC_VAR_INIT(false);
+static atomic_bool ClientStopRequested = false;
 
 static void HandleSignal(int Signal) {
     (void)Signal;
