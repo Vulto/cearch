@@ -147,6 +147,152 @@ static bool FileContains(const char *Path, const char *Query) {
     return Match;
 }
 
+static bool AddWatchRecursive(int WatchFd, const char *Path, unsigned Depth) {
+    if (Depth > 128U) return true;
+    struct stat Status;
+    if (lstat(Path, &Status) != 0 || !S_ISDIR(Status.st_mode)) return true;
+    if (inotify_add_watch(WatchFd, Path,
+            IN_CREATE | IN_DELETE | IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE |
+            IN_MOVED_FROM | IN_MOVED_TO | IN_DELETE_SELF | IN_MOVE_SELF |
+            IN_ONLYDIR) < 0) {
+        if (errno != EACCES && errno != ENOENT && errno != ENOTDIR)
+            fprintf(stderr, "cearchd: cannot watch %s: %s\n", Path, strerror(errno));
+        return true;
+    }
+    DIR *Directory = opendir(Path);
+    if (!Directory) return true;
+    for (;;) {
+        errno = 0;
+        struct dirent *Entry = readdir(Directory);
+        if (!Entry) break;
+        if (strcmp(Entry->d_name, ".") == 0 || strcmp(Entry->d_name, "..") == 0) continue;
+        char *Child = nullptr;
+        size_t ParentLength = strlen(Path), NameLength = strlen(Entry->d_name);
+        bool HasSlash = ParentLength > 0U && Path[ParentLength - 1U] == '/';
+        if (ParentLength > SIZE_MAX - NameLength - (HasSlash ? 1U : 2U)) continue;
+        Child = malloc(ParentLength + NameLength + (HasSlash ? 1U : 2U));
+        if (!Child) {
+            closedir(Directory);
+            return false;
+        }
+        memcpy(Child, Path, ParentLength);
+        size_t Offset = ParentLength;
+        if (!HasSlash) Child[Offset++] = '/';
+        memcpy(Child + Offset, Entry->d_name, NameLength + 1U);
+        struct stat ChildStatus;
+        bool IsDirectory = lstat(Child, &ChildStatus) == 0 && S_ISDIR(ChildStatus.st_mode);
+        if (IsDirectory && !AddWatchRecursive(WatchFd, Child, Depth + 1U)) {
+            free(Child);
+            closedir(Directory);
+            return false;
+        }
+        free(Child);
+    }
+    closedir(Directory);
+    return true;
+}
+
+static bool ResetWatches(CearchDaemon *Daemon) {
+    if (Daemon->WatchFd < 0) return false;
+    (void)close(Daemon->WatchFd);
+    Daemon->WatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (Daemon->WatchFd < 0) return false;
+    for (size_t Index = 0; Index < Daemon->RootCount; ++Index) {
+        if (!AddWatchRecursive(Daemon->WatchFd, Daemon->Roots[Index], 0U)) return false;
+    }
+    return true;
+}
+
+static void FreeRoots(CearchDaemon *Daemon) {
+    for (size_t Index = 0; Index < Daemon->RootCount; ++Index) free(Daemon->Roots[Index]);
+    free(Daemon->Roots);
+    Daemon->Roots = nullptr;
+    Daemon->RootCount = 0;
+}
+
+static bool CopyRoots(CearchDaemon *Daemon, const char *const *Roots, size_t RootCount) {
+    if (!RootCount) return true;
+    if (RootCount > SIZE_MAX / sizeof(*Daemon->Roots)) return false;
+    Daemon->Roots = calloc(RootCount, sizeof(*Daemon->Roots));
+    if (!Daemon->Roots) return false;
+    for (size_t Index = 0; Index < RootCount; ++Index) {
+        Daemon->Roots[Index] = strdup(Roots[Index]);
+        if (!Daemon->Roots[Index]) {
+            Daemon->RootCount = Index;
+            FreeRoots(Daemon);
+            return false;
+        }
+        ++Daemon->RootCount;
+    }
+    return true;
+}
+
+static bool ReconcileDaemon(CearchDaemon *Daemon) {
+    if (!Daemon->RootCount) return true;
+    CearchIndexStats Stats = {0};
+    if (!CearchBuildSnapshot(Daemon->Database,
+            (const char *const *)Daemon->Roots, Daemon->RootCount, &Stats)) {
+        fprintf(stderr, "cearchd: reconciliation failed; retaining previous in-memory snapshot\n");
+        return false;
+    }
+
+    CearchDaemon Replacement = { .Store = { .Descriptor = -1 } };
+    if (!BuildDaemonIndex(&Replacement, Daemon->Database)) {
+        fprintf(stderr, "cearchd: rebuilt snapshot cannot be loaded; current process snapshot retained\n");
+        FreeDaemonIndex(&Replacement);
+        return false;
+    }
+
+    CearchStore OldStore = Daemon->Store;
+    CearchFileEntry *OldEntries = Daemon->Entries;
+    CearchIndex OldIndex = Daemon->NameIndex;
+    char *OldDatabase = Daemon->Database;
+    Daemon->Store = Replacement.Store;
+    Daemon->Entries = Replacement.Entries;
+    Daemon->EntryCount = Replacement.EntryCount;
+    Daemon->NameIndex = Replacement.NameIndex;
+    Daemon->Database = Replacement.Database;
+    Replacement.Store = (CearchStore){ .Descriptor = -1 };
+    Replacement.Entries = nullptr;
+    Replacement.EntryCount = 0;
+    Replacement.NameIndex = (CearchIndex){0};
+    Replacement.Database = nullptr;
+
+    CearchFreeNameIndex(&OldIndex);
+    free(OldEntries);
+    CearchStoreClose(&OldStore);
+    free(OldDatabase);
+    Daemon->Dirty = false;
+    Daemon->LastReconcile = time(nullptr);
+    fprintf(stderr, "cearchd: reconciled %zu entries\n", Stats.EntryCount);
+    if (Daemon->WatchFd >= 0) (void)ResetWatches(Daemon);
+    return true;
+}
+
+static void DrainWatchEvents(CearchDaemon *Daemon) {
+    if (Daemon->WatchFd < 0) return;
+    unsigned char Buffer[CearchWatchBufferSize];
+    for (;;) {
+        ssize_t Count = read(Daemon->WatchFd, Buffer, sizeof(Buffer));
+        if (Count < 0 && errno == EINTR) continue;
+        if (Count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+        if (Count <= 0) break;
+        size_t Offset = 0;
+        while (Offset + sizeof(struct inotify_event) <= (size_t)Count) {
+            const struct inotify_event *Event = (const struct inotify_event *)(Buffer + Offset);
+            if ((Event->mask & IN_Q_OVERFLOW) != 0U) {
+                Daemon->Dirty = true;
+                fprintf(stderr, "cearchd: inotify queue overflow; forcing reconciliation\n");
+            } else if ((Event->mask & (IN_CREATE | IN_DELETE | IN_MODIFY | IN_ATTRIB |
+                       IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO | IN_DELETE_SELF |
+                       IN_MOVE_SELF | IN_IGNORED)) != 0U) {
+                Daemon->Dirty = true;
+            }
+            Offset += sizeof(struct inotify_event) + Event->len;
+        }
+    }
+}
+
 static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
     CearchStore Store = { .Descriptor = -1 };
     if (!CearchStoreOpen(Database, &Store)) {
