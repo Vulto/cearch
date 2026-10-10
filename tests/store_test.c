@@ -63,7 +63,7 @@ int main(void) {
         .Size = 42U, .Mtime = 123, .Device = 1U, .Inode = 2U, .Type = 1U
     };
     const CearchTrigramPosting Trigrams[] = {
-        { .Key = 0x616263U, .Reserved = 0U, .Start = 0U, .Count = 1U }
+        { .Key = 0x616263U, .Reserved = 0U, .Start = 0U, .Count = 1U, .SkipStart = 0U, .SkipCount = 1U }
     };
     const unsigned char PostingData[] = { 0U };
     const CearchPostingSkip Skips[] = {
