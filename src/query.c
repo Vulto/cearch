@@ -234,6 +234,19 @@ static bool ParseValueAndUnit(const char *Text, bool Duration,
 static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
     if (Mode != CearchQuerySubstring) return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
     CearchQueryNodeType Type = CearchQueryTerm;
+    if (strncasecmp(Term, "fuzzy:", 6U) == 0) {
+        memmove(Term, Term + 6U, strlen(Term + 6U) + 1U);
+        size_t Length = strlen(Term);
+        if (Length == 0U || Length > 128U) { free(Term); errno = EINVAL; return NULL; }
+        for (size_t Index = 0U; Index < Length; ++Index) {
+            if (!isalnum((unsigned char)Term[Index])) {
+                free(Term);
+                errno = EINVAL;
+                return NULL;
+            }
+        }
+        return NewNode(CearchQueryFuzzy, NULL, NULL, Term, CearchQuerySubstring);
+    }
     if (strncasecmp(Term, "regex:", 6U) == 0) {
         memmove(Term, Term + 6U, strlen(Term + 6U) + 1U);
         if (!*Term) { free(Term); errno = EINVAL; return NULL; }
@@ -453,34 +466,112 @@ static bool MatchFilter(const CearchQueryNode *Node, const CearchFileEntry *Entr
     }
 }
 
-static bool MatchNode(const CearchQueryNode *Node, const CearchFileEntry *Entry, const char *Text) {
+static bool FuzzyDistance(const char *Needle, const char *Text, uint32_t *Score) {
+    size_t NeedleLength = strlen(Needle);
+    uint32_t Best = UINT32_MAX;
+    const char *Cursor = Text;
+    while (*Cursor) {
+        while (*Cursor && !isalnum((unsigned char)*Cursor)) ++Cursor;
+        const char *Start = Cursor;
+        while (*Cursor && isalnum((unsigned char)*Cursor)) ++Cursor;
+        size_t TextLength = (size_t)(Cursor - Start);
+        if (TextLength == 0U) continue;
+        uint16_t Row[129];
+        for (size_t Column = 0U; Column <= NeedleLength; ++Column)
+            Row[Column] = (uint16_t)Column;
+        for (size_t RowIndex = 1U; RowIndex <= TextLength; ++RowIndex) {
+            uint16_t Diagonal = Row[0];
+            Row[0] = (uint16_t)RowIndex;
+            for (size_t Column = 1U; Column <= NeedleLength; ++Column) {
+                uint16_t Above = Row[Column];
+                uint16_t Substitution = (uint16_t)(Diagonal +
+                    (tolower((unsigned char)Start[RowIndex - 1U]) !=
+                     tolower((unsigned char)Needle[Column - 1U]) ? 1U : 0U));
+                uint16_t Deletion = (uint16_t)(Row[Column] + 1U);
+                uint16_t Insertion = (uint16_t)(Row[Column - 1U] + 1U);
+                uint16_t Minimum = Substitution < Deletion ? Substitution : Deletion;
+                Row[Column] = Minimum < Insertion ? Minimum : Insertion;
+                Diagonal = Above;
+            }
+        }
+        uint32_t Distance = Row[NeedleLength];
+        if (Distance < Best) Best = Distance;
+    }
+    uint32_t Threshold = NeedleLength < 3U ? 0U : (NeedleLength < 6U ? 1U : (uint32_t)(NeedleLength / 3U));
+    if (Best > Threshold) return false;
+    *Score = Best;
+    return true;
+}
+
+static bool MatchNodeScore(const CearchQueryNode *Node, const CearchFileEntry *Entry,
+                           const char *Text, uint32_t *Score) {
+    uint32_t LeftScore = 0U;
+    uint32_t RightScore = 0U;
     switch (Node->Type) {
         case CearchQueryTerm:
+            *Score = 0U;
             return MatchTerm(Node, Text);
         case CearchQueryRegex:
+            *Score = 0U;
             return regexec(&Node->Regex, Text, 0U, NULL, 0) == 0;
+        case CearchQueryFuzzy:
+            return FuzzyDistance(Node->Term, Text, Score);
         case CearchQueryFilterExtension:
         case CearchQueryFilterType:
         case CearchQueryFilterSize:
         case CearchQueryFilterMtime:
         case CearchQueryFilterPath:
         case CearchQueryFilterIn:
+            *Score = 0U;
             return MatchFilter(Node, Entry);
         case CearchQueryNot:
-            return !MatchNode(Node->Left, Entry, Text);
+            if (MatchNodeScore(Node->Left, Entry, Text, &LeftScore)) {
+                *Score = 0U;
+                return false;
+            }
+            *Score = 0U;
+            return true;
         case CearchQueryAnd:
-            return MatchNode(Node->Left, Entry, Text) && MatchNode(Node->Right, Entry, Text);
-        case CearchQueryOr:
-            return MatchNode(Node->Left, Entry, Text) || MatchNode(Node->Right, Entry, Text);
+            if (!MatchNodeScore(Node->Left, Entry, Text, &LeftScore) ||
+                !MatchNodeScore(Node->Right, Entry, Text, &RightScore)) return false;
+            *Score = UINT32_MAX - LeftScore < RightScore ? UINT32_MAX : LeftScore + RightScore;
+            return true;
+        case CearchQueryOr: {
+            bool LeftMatch = MatchNodeScore(Node->Left, Entry, Text, &LeftScore);
+            bool RightMatch = MatchNodeScore(Node->Right, Entry, Text, &RightScore);
+            if (!LeftMatch && !RightMatch) return false;
+            *Score = LeftMatch && RightMatch
+                ? (LeftScore < RightScore ? LeftScore : RightScore)
+                : (LeftMatch ? LeftScore : RightScore);
+            return true;
+        }
     }
     return false;
 }
 
+static bool HasFuzzyNode(const CearchQueryNode *Node) {
+    if (!Node) return false;
+    return Node->Type == CearchQueryFuzzy ||
+           HasFuzzyNode(Node->Left) || HasFuzzyNode(Node->Right);
+}
+
+bool CearchQueryHasFuzzy(const CearchQuery *Query) {
+    return Query && HasFuzzyNode(Query->Root);
+}
+
 bool CearchQueryMatches(const CearchQuery *Query, const char *Text) {
-    return Query && Query->Root && Text && MatchNode(Query->Root, NULL, Text);
+    uint32_t Score = 0U;
+    return Query && Query->Root && Text && MatchNodeScore(Query->Root, NULL, Text, &Score);
 }
 
 bool CearchQueryMatchesEntry(const CearchQuery *Query,
                              const CearchFileEntry *Entry, const char *Text) {
-    return Query && Query->Root && Entry && Text && MatchNode(Query->Root, Entry, Text);
+    uint32_t Score = 0U;
+    return CearchQueryScoreEntry(Query, Entry, Text, &Score);
+}
+
+bool CearchQueryScoreEntry(const CearchQuery *Query, const CearchFileEntry *Entry,
+                           const char *Text, uint32_t *Score) {
+    if (!Query || !Query->Root || !Entry || !Text || !Score) return false;
+    return MatchNodeScore(Query->Root, Entry, Text, Score);
 }
