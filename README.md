@@ -46,4 +46,4 @@ Use [docs/USAGE.md](docs/USAGE.md) for all options and [docs/ARCHITECTURE.md](do
 
 ## Current scope
 
-The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. The snapshot stores filename and bounded content trigram postings. Name queries support boolean expressions, metadata predicates, POSIX regex, and typo-tolerant fuzzy ranking. Parallel client handling, broader content-index coverage, and reproducible performance benchmarks remain future engineering work.
+The program has one-shot indexing/search and a foreground daemon with name/content queries, statistics, ping, shutdown, and optional live reconciliation. The snapshot stores filename and bounded content trigram postings. Name queries support boolean expressions, metadata predicates, POSIX regex, and typo-tolerant fuzzy ranking. The daemon supports bounded parallel clients (64 active workers) with socket timeouts. Broader content-index coverage, high-scale benchmark reports, protocol/failure fuzzing, and portable snapshot encoding remain future engineering work.
