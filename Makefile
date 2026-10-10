@@ -3,7 +3,7 @@ CFLAGS ?= -O2 -pipe
 CFLAGS += -std=gnu2x -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -D_FILE_OFFSET_BITS=64
 LDFLAGS ?=
 
-.PHONY: all clean test unit-test integration-test sanitize analyze install
+.PHONY: all clean test unit-test integration-test sanitize analyze install bench
 
 all: cearch cearchd
 
@@ -35,6 +35,9 @@ sanitize:
 
 analyze:
 	$(CC) $(CFLAGS) -fanalyzer -fsyntax-only src/cearch.c src/index.c src/store.c src/indexer.c src/daemon.c
+
+bench: cearch
+	sh tests/benchmark.sh ./cearch
 
 install: cearch cearchd
 	install -Dm755 cearch $(DESTDIR)/usr/local/bin/cearch
