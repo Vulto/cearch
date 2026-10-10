@@ -313,7 +313,7 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
         CearchStoreClose(&Store);
         return false;
     }
-    for (size_t Index = 0; Index < Store.EntryCount; ++Index) {
+    for (size_t Index = 0U; Index < Store.EntryCount; ++Index) {
         const CearchDiskEntry *DiskEntry = &Store.Entries[Index];
         const char *Path = CearchStorePath(&Store, Index);
         if (!Path) {
@@ -337,11 +337,13 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
     Daemon->EntryCount = Store.EntryCount;
     Daemon->NameIndex.Entries = Entries;
     Daemon->NameIndex.Count = Store.EntryCount;
-    if (!CearchBuildNameIndex(&Daemon->NameIndex)) {
+    if (!CearchAttachNameIndex(&Daemon->NameIndex, Store.Trigrams, Store.TrigramCount,
+                               Store.TrigramFileIds, Store.TrigramPostingCount)) {
         free(Daemon->Entries);
         Daemon->Entries = nullptr;
-        Daemon->EntryCount = 0;
+        Daemon->EntryCount = 0U;
         CearchStoreClose(&Daemon->Store);
+        errno = EINVAL;
         return false;
     }
     Daemon->Database = strdup(Database);
@@ -349,7 +351,7 @@ static bool BuildDaemonIndex(CearchDaemon *Daemon, const char *Database) {
         CearchFreeNameIndex(&Daemon->NameIndex);
         free(Daemon->Entries);
         Daemon->Entries = nullptr;
-        Daemon->EntryCount = 0;
+        Daemon->EntryCount = 0U;
         CearchStoreClose(&Daemon->Store);
         return false;
     }
