@@ -25,7 +25,9 @@ typedef struct {
     uint64_t SkipCount;
     uint64_t FileIdCount;
     uint64_t FileSize;
-} TestDiskHeader;tatic void ExpectRejected(const char *Database) {
+} TestDiskHeader;
+
+static void ExpectRejected(const char *Database) {
     CearchStore Store = { .Descriptor = -1 };
     errno = 0;
     assert(!CearchStoreOpen(Database, &Store));
