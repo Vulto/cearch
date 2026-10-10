@@ -231,12 +231,19 @@ static bool ParseValueAndUnit(const char *Text, bool Duration,
     return true;
 }
 
+static bool StripTermPrefix(char *Term, size_t PrefixLength) {
+    size_t Length = strlen(Term);
+    if (Length <= PrefixLength) return false;
+    memmove(Term, Term + PrefixLength, Length - PrefixLength + 1U);
+    return true;
+}
+
 static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
     if (!Term) { errno = EINVAL; return NULL; }
     if (Mode != CearchQuerySubstring) return NewNode(CearchQueryTerm, NULL, NULL, Term, Mode);
     CearchQueryNodeType Type = CearchQueryTerm;
     if (strncasecmp(Term, "fuzzy:", 6U) == 0) {
-        memmove(Term, Term + 6U, strlen(Term + 6U) + 1U);
+        if (!StripTermPrefix(Term, 6U)) { free(Term); errno = EINVAL; return NULL; }
         size_t Length = strlen(Term);
         if (Length == 0U || Length > 128U) { free(Term); errno = EINVAL; return NULL; }
         for (size_t Index = 0U; Index < Length; ++Index) {
@@ -249,8 +256,7 @@ static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
         return NewNode(CearchQueryFuzzy, NULL, NULL, Term, CearchQuerySubstring);
     }
     if (strncasecmp(Term, "regex:", 6U) == 0) {
-        memmove(Term, Term + 6U, strlen(Term + 6U) + 1U);
-        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+        if (!StripTermPrefix(Term, 6U)) { free(Term); errno = EINVAL; return NULL; }
         CearchQueryNode *Node = NewNode(CearchQueryRegex, NULL, NULL, Term, CearchQuerySubstring);
         if (!Node) return NULL;
         int Result = regcomp(&Node->Regex, Node->Term, REG_EXTENDED | REG_NOSUB | REG_ICASE);
@@ -265,22 +271,23 @@ static CearchQueryNode *BuildTermNode(char *Term, CearchQueryMatchMode Mode) {
 
     if (strncasecmp(Term, "ext:", 4U) == 0) {
         Type = CearchQueryFilterExtension;
-        memmove(Term, Term + 4U, strlen(Term + 4U) + 1U);
-        if (*Term == '.') memmove(Term, Term + 1U, strlen(Term));
-        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+        if (!StripTermPrefix(Term, 4U)) { free(Term); errno = EINVAL; return NULL; }
+        if (*Term == '.') {
+            size_t Length = strlen(Term);
+            if (Length <= 1U) { free(Term); errno = EINVAL; return NULL; }
+            memmove(Term, Term + 1U, Length);
+        }
     } else if (strncasecmp(Term, "type:", 5U) == 0) {
         Type = CearchQueryFilterType;
-        memmove(Term, Term + 5U, strlen(Term + 5U) + 1U);
+        if (!StripTermPrefix(Term, 5U)) { free(Term); errno = EINVAL; return NULL; }
         if (strcasecmp(Term, "file") != 0 && strcasecmp(Term, "dir") != 0 &&
             strcasecmp(Term, "other") != 0) { free(Term); errno = EINVAL; return NULL; }
     } else if (strncasecmp(Term, "path:", 5U) == 0) {
         Type = CearchQueryFilterPath;
-        memmove(Term, Term + 5U, strlen(Term + 5U) + 1U);
-        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+        if (!StripTermPrefix(Term, 5U)) { free(Term); errno = EINVAL; return NULL; }
     } else if (strncasecmp(Term, "in:", 3U) == 0) {
         Type = CearchQueryFilterIn;
-        memmove(Term, Term + 3U, strlen(Term + 3U) + 1U);
-        if (!*Term) { free(Term); errno = EINVAL; return NULL; }
+        if (!StripTermPrefix(Term, 3U)) { free(Term); errno = EINVAL; return NULL; }
     } else if (strncasecmp(Term, "size:", 5U) == 0 ||
                strncasecmp(Term, "mtime:", 6U) == 0) {
         bool IsMtime = strncasecmp(Term, "mtime:", 6U) == 0;
